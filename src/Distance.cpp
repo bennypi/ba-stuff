@@ -77,7 +77,7 @@ void imageCallback(const sensor_msgs::ImageConstPtr& msg) {
 			cv::CALIB_CB_FAST_CHECK);
 	std::cout << found << std::endl;
 	if (found) {
-		getDistance(mat);
+		getDistance(output);
 		cv::drawChessboardCorners(mat, boardDims, output, found);
 		cv::imshow("Display window", mat);
 	}
