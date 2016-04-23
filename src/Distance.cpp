@@ -47,7 +47,7 @@ void getDistance(cv::Mat points) {
 		}
 	}
 
-	cv::Mat cameraMatrix, distortion, rvec, rotation, translation;
+	cv::Mat cameraMatrix, distortion, rvec, rotation, translation, normal;
 	;
 	cv::FileStorage fs;
 	std::string path("/home/benny/kinect_cal_data/calib_color.yaml");
@@ -62,7 +62,18 @@ void getDistance(cv::Mat points) {
 			translation, false, 300, 0.05, board.size(), cv::noArray(),
 			cv::ITERATIVE);
 
-	std::cout << translation << std::endl;
+	cv::Rodrigues(rvec, rotation);
+	std::cout << rvec << std::endl;
+	std::cout << rotation << std::endl;
+
+	normal = cv::Mat(3, 1, CV_64F);
+	normal.at<double>(0) = 0;
+	normal.at<double>(1) = 0;
+	normal.at<double>(2) = 1;
+	normal = rotation * normal;
+	double distance = normal.dot(translation);
+
+	std::cout << distance << std::endl;
 }
 
 void imageCallback(const sensor_msgs::ImageConstPtr& msg) {
