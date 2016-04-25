@@ -28,11 +28,12 @@ Distance::~Distance() {
 	// TODO Auto-generated destructor stub
 }
 
-bool chessBoardfound;
+bool chessBoardfound, update;
 cv::Size boardDims(7, 5);
 float boardSize = 0.03;
 std::vector<cv::Point3f> board;
 cv::Mat cameraMatrix, distortion, rvec, rotation, translation, normal;
+cv::Mat mat, output;
 
 void readImage(const sensor_msgs::Image::ConstPtr msgImage, cv::Mat &image) {
 	cv_bridge::CvImageConstPtr pCvImage;
@@ -58,11 +59,11 @@ double getDistance(cv::Mat points) {
 
 void imageCallback(const sensor_msgs::ImageConstPtr& msg) {
 	std::cout << "callback" << std::endl;
-	cv::Mat mat, output;
+
 	readImage(msg, mat);
 	chessBoardfound = false;
-	chessBoardfound = cv::findChessboardCorners(mat, boardDims, output,
-			cv::CALIB_CB_FAST_CHECK);
+//	chessBoardfound = cv::findChessboardCorners(mat, boardDims, output,
+//			cv::CALIB_CB_FAST_CHECK);
 //	std::cout << chessBoardfound << std::endl;
 //	if (chessBoardfound) {
 //		double distance = getDistance(output);
@@ -70,7 +71,8 @@ void imageCallback(const sensor_msgs::ImageConstPtr& msg) {
 //		std::string distanceString = patch::to_string(distance).append(" m");
 //		cv::putText(mat, distanceString, cv::Point(50, 100), cv::FONT_HERSHEY_SIMPLEX, 1, cv::Scalar(0, 255, 0), 4);
 //	}
-	cv::imshow("Display window", mat);
+
+	update=true;
 	std::cout << "callback finished" << std::endl;
 }
 
@@ -109,9 +111,18 @@ int main(int argc, char **argv) {
 	createBoardPoints();
 	normal = cv::Mat(3, 1, CV_64F);
 
+//	ros::spin();
 	spinner.start();
 //	while (!chessBoardfound) {
 //		ros::spinOnce();
 //	}
-	cv::waitKey(0);
+	while (true)
+	{
+		if (update)
+		{
+		cv::imshow("Display window", mat);
+		update = false;
+		}
+		cv::waitKey(1);
+	}
 }
