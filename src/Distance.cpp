@@ -7,20 +7,11 @@
 
 #include "Distance.h"
 
-#include <stdlib.h>
-#include <stdio.h>
-#include <iostream>
+const char* Distance::KINECT_IMAGE = "KINECT_IMAGE";
+const char* Distance::COLOR_MAP = "COLOR_MAP";
 
-#include <image_transport/image_transport.h>
-#include <image_transport/subscriber_filter.h>
-
-#include <ros/ros.h>
-
-#include <cv_bridge/cv_bridge.h>
-#include <opencv2/opencv.hpp>
-
-Distance::Distance() {
-	// TODO Auto-generated constructor stub
+Distance::Distance(const cv::Size &size) :
+		boardDims(size), chessBoardfound(false), update(false) {
 
 }
 
@@ -28,101 +19,136 @@ Distance::~Distance() {
 	// TODO Auto-generated destructor stub
 }
 
-bool chessBoardfound, update;
-cv::Size boardDims(7, 5);
-float boardSize = 0.03;
-std::vector<cv::Point3f> board;
-cv::Mat cameraMatrix, distortion, rvec, rotation, translation, normal;
-cv::Mat mat, output;
-
 void readImage(const sensor_msgs::Image::ConstPtr msgImage, cv::Mat &image) {
 	cv_bridge::CvImageConstPtr pCvImage;
 	pCvImage = cv_bridge::toCvShare(msgImage, msgImage->encoding);
 	pCvImage->image.copyTo(image);
 }
 
-double getDistance(cv::Mat points) {
-	cv::solvePnPRansac(board, points, cameraMatrix, distortion, rvec,
-			translation, false, 300, 0.05, board.size(), cv::noArray(),
-			cv::ITERATIVE);
+double Distance::getNormalWithDistance(cv::Mat points, cv::Mat &normal) {
+	cv::solvePnPRansac(Distance::board, points, Distance::cameraMatrix,
+			Distance::distortion, Distance::rvec, Distance::translation, false,
+			300, 0.05, Distance::board.size(), cv::noArray(), cv::ITERATIVE);
 
-	cv::Rodrigues(rvec, rotation);
+	cv::Rodrigues(Distance::rvec, Distance::rotation);
 
 	normal.at<double>(0) = 0;
 	normal.at<double>(1) = 0;
 	normal.at<double>(2) = 1;
-	normal = rotation * normal;
-	double distance = normal.dot(translation);
+	normal = Distance::rotation * normal;
+	double distance = normal.dot(Distance::translation);
 
 	return distance;
 }
 
-void imageCallback(const sensor_msgs::ImageConstPtr& msg) {
-	std::cout << "callback" << std::endl;
+double Distance::computeDistanceToPoint(const cv::Point &pointImage,
+		const cv::Mat &normal, const double distance) {
+	cv::Mat point = cv::Mat(3, 1, CV_64F);
 
-	readImage(msg, mat);
-	chessBoardfound = false;
-//	chessBoardfound = cv::findChessboardCorners(mat, boardDims, output,
-//			cv::CALIB_CB_FAST_CHECK);
-//	std::cout << chessBoardfound << std::endl;
-//	if (chessBoardfound) {
-//		double distance = getDistance(output);
-//		cv::drawChessboardCorners(mat, boardDims, output, chessBoardfound);
-//		std::string distanceString = patch::to_string(distance).append(" m");
-//		cv::putText(mat, distanceString, cv::Point(50, 100), cv::FONT_HERSHEY_SIMPLEX, 1, cv::Scalar(0, 255, 0), 4);
-//	}
+	point.at<double>(0) = (pointImage.x - Distance::cx) / Distance::fx;
+	point.at<double>(1) = (pointImage.y - Distance::cy) / Distance::fy;
+	point.at<double>(2) = 1;
 
-	update=true;
-	std::cout << "callback finished" << std::endl;
+	double t = distance / normal.dot(point);
+	point = point * t;
+
+	return point.at<double>(2);
 }
 
-void readCalibrationData() {
+void Distance::readCalibrationData() {
 	cv::FileStorage fs;
 	std::string path("/home/benny/kinect_cal_data/calib_color.yaml");
 	if (fs.open(path, cv::FileStorage::READ)) {
-		fs["cameraMatrix"] >> cameraMatrix;
-		fs["distortionCoefficients"] >> distortion;
+		fs["cameraMatrix"] >> Distance::cameraMatrix;
+		fs["distortionCoefficients"] >> Distance::distortion;
 		fs.release();
 	} else {
 		std::cerr << "couldn't read calibration '" << path << "'!" << std::endl;
 	}
+//	do i need this?
+//	cv::initUndistortRectifyMap(cameraMatrix, distortion, cv::Mat(), cameraMatrix, size, CV_32FC1, mapX, mapY);
+	Distance::fx = Distance::cameraMatrix.at<double>(0, 0);
+	Distance::fy = Distance::cameraMatrix.at<double>(1, 1);
+	Distance::cx = Distance::cameraMatrix.at<double>(0, 2);
+	Distance::cy = Distance::cameraMatrix.at<double>(1, 2);
 }
 
-void createBoardPoints() {
-	board.resize(boardDims.width * boardDims.height);
-	for (size_t r = 0, i = 0; r < (size_t) (boardDims.height); ++r) {
-		for (size_t c = 0; c < (size_t) (boardDims.width); ++c, ++i) {
-			board[i] = cv::Point3f(c * boardSize, r * boardSize, 0);
+void Distance::createBoardPoints() {
+	Distance::board.resize(
+			Distance::boardDims.width * Distance::boardDims.height);
+	for (size_t r = 0, i = 0; r < (size_t) (Distance::boardDims.height); ++r) {
+		for (size_t c = 0; c < (size_t) (Distance::boardDims.width); ++c, ++i) {
+			Distance::board[i] = cv::Point3f(c * Distance::boardSize,
+					r * Distance::boardSize, 0);
 		}
 	}
 }
 
+void Distance::drawDetailsInImage(double normalDistance) {
+	cv::Mat coloredMat;
+	cv::cvtColor(Distance::mat, coloredMat, CV_GRAY2BGR);
+	cv::drawChessboardCorners(coloredMat, Distance::boardDims, Distance::output,
+			Distance::chessBoardfound);
+	std::string distanceString = patch::to_string(normalDistance).append(" m");
+	cv::putText(coloredMat, distanceString, cv::Point(50, 100),
+			cv::FONT_HERSHEY_SIMPLEX, 1, cv::Scalar(0, 255, 0), 4);
+	cv::imshow(Distance::KINECT_IMAGE, coloredMat);
+}
+
+void Distance::imageCallback(const sensor_msgs::ImageConstPtr& msg) {
+	readImage(msg, Distance::mat);
+	Distance::chessBoardfound = false;
+	Distance::chessBoardfound = cv::findChessboardCorners(Distance::mat,
+			Distance::boardDims, Distance::output, cv::CALIB_CB_FAST_CHECK);
+	Distance::update = true;
+}
+
 int main(int argc, char **argv) {
-	std::cout << "hello world" << std::endl;
+	Distance d(cv::Size(5, 7));
 	ros::init(argc, argv, "distance");
 	ros::NodeHandle nh;
 	ros::AsyncSpinner spinner(1);
 	image_transport::ImageTransport it(nh);
 	image_transport::Subscriber sub = it.subscribe("/kinect2/hd/image_mono", 1,
-			imageCallback);
-	cv::namedWindow("Display window", cv::WINDOW_AUTOSIZE); // Create a window for display.
+			&Distance::imageCallback, &d);
+	cv::namedWindow(Distance::KINECT_IMAGE, cv::WINDOW_AUTOSIZE);
 
-	readCalibrationData();
-	createBoardPoints();
-	normal = cv::Mat(3, 1, CV_64F);
+	d.readCalibrationData();
+	d.createBoardPoints();
 
-//	ros::spin();
-	spinner.start();
-//	while (!chessBoardfound) {
-//		ros::spinOnce();
-//	}
-	while (true)
-	{
-		if (update)
-		{
-		cv::imshow("Display window", mat);
-		update = false;
+	while (!d.chessBoardfound) {
+		ros::spinOnce();
+		if (d.update) {
+			cv::imshow(Distance::KINECT_IMAGE, d.mat);
+			d.update = false;
 		}
-		cv::waitKey(1);
+		cv::waitKey(100);
 	}
+	d.normal = cv::Mat(3, 1, CV_64F);
+	double normalDistance = d.getNormalWithDistance(d.output, d.normal);
+	d.drawDetailsInImage(normalDistance);
+	cv::Mat distanceOfCorners(7, 5, CV_64F);
+	for (int i = 0, idx = 0; i < distanceOfCorners.rows; i++) {
+		for (int j = 0; j < distanceOfCorners.cols; j++, idx++) {
+			double distanceOfPoint = d.computeDistanceToPoint(
+					d.output.at<cv::Point2f>(idx), d.normal, normalDistance);
+			distanceOfCorners.at<double>(i, j) = distanceOfPoint;
+		}
+	}
+	std::cout << distanceOfCorners << std::endl;
+
+//	cv::namedWindow(COLOR_MAP, cv::WINDOW_AUTOSIZE);
+	double min;
+	double max;
+	cv::minMaxIdx(distanceOfCorners, &min, &max);
+	double scale = 255 / (max-min);
+	std::cout << min << " " << max << std::endl;
+	// expand your range to 0..255. Similar to histEq();
+	distanceOfCorners.convertTo(d.adjMap, CV_8UC1, scale, -min*scale);
+	std::cout << d.adjMap << std::endl;
+	cv::applyColorMap(d.adjMap, d.colorMap, cv::COLORMAP_JET);
+	cv::Mat largeColorMap;
+	cv::resize(d.colorMap, largeColorMap, cv::Size(d.colorMap.cols * 100, d.colorMap.rows * 100));
+	cv::imshow(Distance::COLOR_MAP, largeColorMap);
+	cv::waitKey();
 }
