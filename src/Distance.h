@@ -14,6 +14,7 @@
 
 #include <image_transport/image_transport.h>
 #include <image_transport/subscriber_filter.h>
+#include <message_filters/time_synchronizer.h>
 
 #include <ros/ros.h>
 
@@ -30,8 +31,8 @@ private:
 public:
 	const static char* KINECT_IMAGE;
 	const static char* COLOR_MAP;
-	bool chessBoardfound, update;
-	cv::Mat normal, adjMap, colorMap, mat, output;
+	bool chessBoardFound, update;
+	cv::Mat normal, adjMap, colorMap, color, depth, output;
 	const cv::Size boardDims;
 
 	Distance(const cv::Size &size);
@@ -42,7 +43,9 @@ public:
 	double computeDistanceToPoint(const cv::Point &pointImage,
 			const cv::Mat &normal, const double distance);
 	void drawDetailsInImage(double normalDistance);
-	void imageCallback(const sensor_msgs::ImageConstPtr& msg);
+	void imageCallback(const sensor_msgs::ImageConstPtr color,
+			const sensor_msgs::ImageConstPtr ir);
+	void imageCallback(const sensor_msgs::ImageConstPtr color);
 };
 
 #endif /* BA_STUFF_SRC_DISTANCE_H_ */
