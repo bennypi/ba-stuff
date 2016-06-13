@@ -5,13 +5,33 @@
  *      Author: benny
  */
 
-#include "Distance.h"
+#include "distance.h"
 
 const char* Distance::KINECT_IMAGE = "KINECT_IMAGE";
 const char* Distance::COLOR_MAP = "COLOR_MAP";
 
-Distance::Distance(const cv::Size &size) :
+Distance::Distance(const cv::Size &size, int argc, char **argv) :
 		boardDims(size), chessBoardFound(false), update(false) {
+	ros::init(argc, argv, "distance");
+		ros::NodeHandle nh;
+		ros::AsyncSpinner spinner(1);
+		image_transport::ImageTransport it(nh);
+
+		image_transport::TransportHints hints("compressed");
+		typedef message_filters::sync_policies::ExactTime<sensor_msgs::Image,
+				sensor_msgs::Image> ColorIrDepthSyncPolicy;
+
+		image_transport::SubscriberFilter *subImageColor =
+				new image_transport::SubscriberFilter(it, "/kinect2/hd/image_mono",
+						4, hints);
+		image_transport::SubscriberFilter *subImageDepth =
+				new image_transport::SubscriberFilter(it, "/kinect2/sd/image_depth",
+						4, hints);
+
+		message_filters::Synchronizer<ColorIrDepthSyncPolicy> *sync =
+				new message_filters::Synchronizer<ColorIrDepthSyncPolicy>(
+						ColorIrDepthSyncPolicy(4), *subImageColor, *subImageDepth);
+		sync->registerCallback(boost::bind(&Distance::syncedImageCallback, this, _1, _2));
 
 }
 
@@ -65,6 +85,15 @@ void Distance::readCalibrationData() {
 	} else {
 		std::cerr << "couldn't read calibration '" << path << "'!" << std::endl;
 	}
+	path = ("/home/benny/kinect_cal_data/calib_pose.yaml");
+	if (fs.open(path, cv::FileStorage::READ)) {
+			fs["rotation"] >> Distance::extrinsicsRotation;
+			fs["translation"] >> Distance::extrinsicsTranslation;
+			fs.release();
+		} else {
+			std::cerr << "couldn't read calibration '" << path << "'!" << std::endl;
+		}
+
 //	do i need this?
 //	cv::initUndistortRectifyMap(cameraMatrix, distortion, cv::Mat(), cameraMatrix, size, CV_32FC1, mapX, mapY);
 	std::cout << Distance::cameraMatrix << std::endl;
@@ -104,7 +133,7 @@ void Distance::imageCallback(const sensor_msgs::ImageConstPtr color) {
 	Distance::update = true;
 }
 
-void Distance::imageCallback(const sensor_msgs::ImageConstPtr color, const sensor_msgs::ImageConstPtr depth) {
+void Distance::syncedImageCallback(const sensor_msgs::ImageConstPtr color, const sensor_msgs::ImageConstPtr depth) {
 	readImage(color, Distance::color);
 	readImage(depth, Distance::depth);
 	Distance::chessBoardFound = false;
@@ -114,29 +143,7 @@ void Distance::imageCallback(const sensor_msgs::ImageConstPtr color, const senso
 }
 
 int main(int argc, char **argv) {
-	Distance d(cv::Size(7, 5));
-	ros::init(argc, argv, "distance");
-	ros::NodeHandle nh;
-	ros::AsyncSpinner spinner(1);
-	image_transport::ImageTransport it(nh);
-//	image_transport::Subscriber sub = it.subscribe("/kinect2/hd/image_mono", 1,
-//			&Distance::imageCallback, &d);
-
-	image_transport::TransportHints hints("compressed");
-	typedef message_filters::sync_policies::ExactTime<sensor_msgs::Image,
-			sensor_msgs::Image> ColorIrDepthSyncPolicy;
-
-	image_transport::SubscriberFilter *subImageColor =
-			new image_transport::SubscriberFilter(it, "/kinect2/hd/image_mono",
-					4, hints);
-	image_transport::SubscriberFilter *subImageDepth =
-			new image_transport::SubscriberFilter(it, "/kinect2/sd/image_depth",
-					4, hints);
-
-	message_filters::Synchronizer<ColorIrDepthSyncPolicy> *sync =
-			new message_filters::Synchronizer<ColorIrDepthSyncPolicy>(
-					ColorIrDepthSyncPolicy(4), *subImageColor, *subImageDepth);
-	sync->registerCallback(boost::bind(&Distance::imageCallback, &d, _1, _2));
+	Distance d(cv::Size(7, 5), argc, argv);
 
 	cv::namedWindow(Distance::KINECT_IMAGE, cv::WINDOW_AUTOSIZE);
 
@@ -162,6 +169,16 @@ int main(int argc, char **argv) {
 			distanceOfCorners.at<double>(i, j) = distanceOfPoint;
 		}
 	}
+
+	// rotate and translate the normal to the ir frame
+	cv::Mat normalInIR = d.extrinsicsRotation* d.normal;
+	std::cout << d.normal.cols << " " << d.normal.rows << std::endl;
+	std::cout << normalInIR.cols << " " << normalInIR.rows << std::endl;
+//	cv::normalize(normalInIR);
+	std::cout << normalInIR << std::endl;
+	normalInIR = d.extrinsicsTranslation * normalInIR;
+
+
 
 //	cv::namedWindow(COLOR_MAP, cv::WINDOW_AUTOSIZE);
 	double min;

@@ -32,10 +32,10 @@ public:
 	const static char* KINECT_IMAGE;
 	const static char* COLOR_MAP;
 	bool chessBoardFound, update;
-	cv::Mat normal, adjMap, colorMap, color, depth, output;
+	cv::Mat normal, adjMap, colorMap, color, depth, output, extrinsicsRotation, extrinsicsTranslation;
 	const cv::Size boardDims;
 
-	Distance(const cv::Size &size);
+	Distance(const cv::Size &size, int argc, char **argv);
 	virtual ~Distance();
 	void readCalibrationData();
 	void createBoardPoints();
@@ -43,7 +43,7 @@ public:
 	double computeDistanceToPoint(const cv::Point &pointImage,
 			const cv::Mat &normal, const double distance);
 	void drawDetailsInImage(double normalDistance);
-	void imageCallback(const sensor_msgs::ImageConstPtr color,
+	void syncedImageCallback(const sensor_msgs::ImageConstPtr color,
 			const sensor_msgs::ImageConstPtr ir);
 	void imageCallback(const sensor_msgs::ImageConstPtr color);
 };
