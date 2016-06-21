@@ -21,6 +21,8 @@
 #include <cv_bridge/cv_bridge.h>
 #include <opencv2/opencv.hpp>
 
+#include "rosconnector.h"
+
 class Distance {
 private:
 	const float boardSize = 0.03;
@@ -35,7 +37,7 @@ public:
 	cv::Mat normal, adjMap, colorMap, color, depth, output, extrinsicsRotation, extrinsicsTranslation;
 	const cv::Size boardDims;
 
-	Distance(const cv::Size &size, int argc, char **argv);
+	Distance(const cv::Size &size, std::string imageTopic, int argc, char **argv);
 	virtual ~Distance();
 	void readCalibrationData();
 	void createBoardPoints();
@@ -46,6 +48,7 @@ public:
 	void syncedImageCallback(const sensor_msgs::ImageConstPtr color,
 			const sensor_msgs::ImageConstPtr ir);
 	void imageCallback(const sensor_msgs::ImageConstPtr color);
+	RosConnector connector;
 };
 
 #endif /* BA_STUFF_SRC_DISTANCE_H_ */

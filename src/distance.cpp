@@ -10,29 +10,11 @@
 const char* Distance::KINECT_IMAGE = "KINECT_IMAGE";
 const char* Distance::COLOR_MAP = "COLOR_MAP";
 
-Distance::Distance(const cv::Size &size, int argc, char **argv) :
+Distance::Distance(const cv::Size &size, std::string imageTopic, int argc, char **argv) :
 		boardDims(size), chessBoardFound(false), update(false) {
 	ros::init(argc, argv, "distance");
-		ros::NodeHandle nh;
-		ros::AsyncSpinner spinner(1);
-		image_transport::ImageTransport it(nh);
-
-		image_transport::TransportHints hints("compressed");
-		typedef message_filters::sync_policies::ExactTime<sensor_msgs::Image,
-				sensor_msgs::Image> ColorIrDepthSyncPolicy;
-
-		image_transport::SubscriberFilter *subImageColor =
-				new image_transport::SubscriberFilter(it, "/kinect2/hd/image_mono",
-						4, hints);
-		image_transport::SubscriberFilter *subImageDepth =
-				new image_transport::SubscriberFilter(it, "/kinect2/sd/image_depth",
-						4, hints);
-
-		message_filters::Synchronizer<ColorIrDepthSyncPolicy> *sync =
-				new message_filters::Synchronizer<ColorIrDepthSyncPolicy>(
-						ColorIrDepthSyncPolicy(4), *subImageColor, *subImageDepth);
-		sync->registerCallback(boost::bind(&Distance::syncedImageCallback, this, _1, _2));
-
+	ros::NodeHandle nh;
+	Distance::connector(nh, "", "");
 }
 
 Distance::~Distance() {
@@ -143,7 +125,7 @@ void Distance::syncedImageCallback(const sensor_msgs::ImageConstPtr color, const
 }
 
 int main(int argc, char **argv) {
-	Distance d(cv::Size(7, 5), argc, argv);
+	Distance d(cv::Size(7, 5), "/kinect2/hd/image_color", argc, argv);
 
 	cv::namedWindow(Distance::KINECT_IMAGE, cv::WINDOW_AUTOSIZE);
 
