@@ -27,6 +27,10 @@ private:
 	std::vector<cv::Point3f> board;
 	cv::Mat cameraMatrix, distortion, rvec, rotation, translation;
 	double fx, fy, cx, cy;
+	ros::Subscriber sub;
+
+	void createSyncedSubscriber(ros::NodeHandle &nh);
+	void createSimpleSubscriber(ros::NodeHandle nh);
 
 public:
 	const static char* KINECT_IMAGE;

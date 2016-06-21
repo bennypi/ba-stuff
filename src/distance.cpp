@@ -10,29 +10,37 @@
 const char* Distance::KINECT_IMAGE = "KINECT_IMAGE";
 const char* Distance::COLOR_MAP = "COLOR_MAP";
 
+void Distance::createSyncedSubscriber(ros::NodeHandle &nh) {
+	image_transport::ImageTransport it(nh);
+	image_transport::TransportHints hints("compressed");
+	typedef message_filters::sync_policies::ExactTime<sensor_msgs::Image,
+			sensor_msgs::Image> ColorIrDepthSyncPolicy;
+	image_transport::SubscriberFilter* subImageColor =
+			new image_transport::SubscriberFilter(it, "/kinect2/sd/ir", 4,
+					hints);
+	image_transport::SubscriberFilter* subImageDepth =
+			new image_transport::SubscriberFilter(it, "/kinect2/sd/image_depth",
+					4, hints);
+	message_filters::Synchronizer<ColorIrDepthSyncPolicy>* sync =
+			new message_filters::Synchronizer<ColorIrDepthSyncPolicy>(
+					ColorIrDepthSyncPolicy(4), *subImageColor, *subImageDepth);
+	sync->registerCallback(
+			boost::bind(&Distance::syncedImageCallback, this, _1, _2));
+}
+
+void Distance::createSimpleSubscriber(ros::NodeHandle nh)
+{
+	Distance::sub = nh.subscribe("/kinect2/sd/image_ir", 1000, &Distance::imageCallback, this);
+}
+
 Distance::Distance(const cv::Size &size, int argc, char **argv) :
 		boardDims(size), chessBoardFound(false), update(false) {
 	ros::init(argc, argv, "distance");
-		ros::NodeHandle nh;
-		ros::AsyncSpinner spinner(1);
-		image_transport::ImageTransport it(nh);
+	ros::NodeHandle nh;
+//	ros::AsyncSpinner spinner(1);
 
-		image_transport::TransportHints hints("compressed");
-		typedef message_filters::sync_policies::ExactTime<sensor_msgs::Image,
-				sensor_msgs::Image> ColorIrDepthSyncPolicy;
-
-		image_transport::SubscriberFilter *subImageColor =
-				new image_transport::SubscriberFilter(it, "/kinect2/hd/image_mono",
-						4, hints);
-		image_transport::SubscriberFilter *subImageDepth =
-				new image_transport::SubscriberFilter(it, "/kinect2/sd/image_depth",
-						4, hints);
-
-		message_filters::Synchronizer<ColorIrDepthSyncPolicy> *sync =
-				new message_filters::Synchronizer<ColorIrDepthSyncPolicy>(
-						ColorIrDepthSyncPolicy(4), *subImageColor, *subImageDepth);
-		sync->registerCallback(boost::bind(&Distance::syncedImageCallback, this, _1, _2));
-
+//	createSyncedSubscriber(nh);
+	createSimpleSubscriber(nh);
 }
 
 Distance::~Distance() {
@@ -126,10 +134,16 @@ void Distance::drawDetailsInImage(double normalDistance) {
 }
 
 void Distance::imageCallback(const sensor_msgs::ImageConstPtr color) {
+	printf("imageCallback called");
 	readImage(color, Distance::color);
+	if(Distance::color.type() == 2)
+	{
+		std::cout << "converted from 16bit to 8 bit" << std::endl;
+		Distance::color.convertTo(Distance::color, CV_8U, 0.00390625);
+	}
 	Distance::chessBoardFound = false;
 	Distance::chessBoardFound = cv::findChessboardCorners(Distance::color,
-			Distance::boardDims, Distance::output, cv::CALIB_CB_FAST_CHECK);
+			Distance::boardDims, Distance::output, cv::CALIB_CB_ADAPTIVE_THRESH);
 	Distance::update = true;
 }
 
@@ -150,14 +164,19 @@ int main(int argc, char **argv) {
 	d.readCalibrationData();
 	d.createBoardPoints();
 
+	ros::Rate r(10);
+
+	ros::spinOnce();
 	while (!d.chessBoardFound) {
-		ros::spinOnce();
 		if (d.update) {
 			cv::imshow(Distance::KINECT_IMAGE, d.color);
 			d.update = false;
 		}
 		cv::waitKey(100);
+		ros::spinOnce();
+		r.sleep();
 	}
+	std::cout << "chessboard found" << std::endl;
 	d.normal = cv::Mat(3, 1, CV_64F);
 	double normalDistance = d.getNormalWithDistance(d.output, d.normal);
 	d.drawDetailsInImage(normalDistance);
@@ -169,15 +188,6 @@ int main(int argc, char **argv) {
 			distanceOfCorners.at<double>(i, j) = distanceOfPoint;
 		}
 	}
-
-	// rotate and translate the normal to the ir frame
-	cv::Mat normalInIR = d.extrinsicsRotation* d.normal;
-	std::cout << d.normal.cols << " " << d.normal.rows << std::endl;
-	std::cout << normalInIR.cols << " " << normalInIR.rows << std::endl;
-//	cv::normalize(normalInIR);
-	std::cout << normalInIR << std::endl;
-	normalInIR = d.extrinsicsTranslation * normalInIR;
-
 
 
 //	cv::namedWindow(COLOR_MAP, cv::WINDOW_AUTOSIZE);
