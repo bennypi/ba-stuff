@@ -9,18 +9,23 @@
 
 const char* Distance::KINECT_IMAGE = "KINECT_IMAGE";
 const char* Distance::COLOR_MAP = "COLOR_MAP";
+const char* IR_TOPIC = "/kinect2/sd/image_ir";
+const char* DEPTH_TOPIC = "/kinect2/sd/image_depth";
+const char* COLOR_TOPIC = "/kinect2/hd/image_color";
 
-void Distance::createSyncedSubscriber(ros::NodeHandle &nh) {
+void Distance::createSimpleSubscriber(ros::NodeHandle nh, char const *topic) {
+	Distance::sub = nh.subscribe(topic, 1000, &Distance::imageCallback, this);
+}
+
+void Distance::createSyncedSubscriber(ros::NodeHandle& nh, char const *topic) {
 	image_transport::ImageTransport it(nh);
 	image_transport::TransportHints hints("compressed");
 	typedef message_filters::sync_policies::ExactTime<sensor_msgs::Image,
 			sensor_msgs::Image> ColorIrDepthSyncPolicy;
 	image_transport::SubscriberFilter* subImageColor =
-			new image_transport::SubscriberFilter(it, "/kinect2/sd/ir", 4,
-					hints);
+			new image_transport::SubscriberFilter(it, IR_TOPIC, 4, hints);
 	image_transport::SubscriberFilter* subImageDepth =
-			new image_transport::SubscriberFilter(it, "/kinect2/sd/image_depth",
-					4, hints);
+			new image_transport::SubscriberFilter(it, DEPTH_TOPIC, 4, hints);
 	message_filters::Synchronizer<ColorIrDepthSyncPolicy>* sync =
 			new message_filters::Synchronizer<ColorIrDepthSyncPolicy>(
 					ColorIrDepthSyncPolicy(4), *subImageColor, *subImageDepth);
@@ -28,19 +33,23 @@ void Distance::createSyncedSubscriber(ros::NodeHandle &nh) {
 			boost::bind(&Distance::syncedImageCallback, this, _1, _2));
 }
 
-void Distance::createSimpleSubscriber(ros::NodeHandle nh)
-{
-	Distance::sub = nh.subscribe("/kinect2/sd/image_ir", 1000, &Distance::imageCallback, this);
-}
-
-Distance::Distance(const cv::Size &size, int argc, char **argv) :
-		boardDims(size), chessBoardFound(false), update(false) {
+Distance::Distance(bool mode_ir, bool mode_synced, const cv::Size &size,
+		int argc, char **argv) :
+		mode_ir(mode_ir), mode_synced(mode_synced), boardDims(size), chessBoardFound(
+				false), update(false) {
 	ros::init(argc, argv, "distance");
 	ros::NodeHandle nh;
 //	ros::AsyncSpinner spinner(1);
 
-//	createSyncedSubscriber(nh);
-	createSimpleSubscriber(nh);
+	if (mode_ir && !mode_synced) {
+		createSimpleSubscriber(nh, IR_TOPIC);
+	} else if (!mode_ir && !mode_synced) {
+		createSimpleSubscriber(nh, COLOR_TOPIC);
+	} else if (mode_ir && mode_synced) {
+		createSyncedSubscriber(nh, IR_TOPIC);
+	} else {
+		createSyncedSubscriber(nh, COLOR_TOPIC);
+	}
 }
 
 Distance::~Distance() {
@@ -85,7 +94,12 @@ double Distance::computeDistanceToPoint(const cv::Point &pointImage,
 
 void Distance::readCalibrationData() {
 	cv::FileStorage fs;
-	std::string path("/home/benny/kinect_cal_data/calib_color.yaml");
+	std::string path;
+	if (mode_ir) {
+		path = ("/home/benny/kinect_cal_data/calib_ir.yaml");
+	} else {
+		path = ("/home/benny/kinect_cal_data/calib_color.yaml");
+	}
 	if (fs.open(path, cv::FileStorage::READ)) {
 		fs["cameraMatrix"] >> Distance::cameraMatrix;
 		fs["distortionCoefficients"] >> Distance::distortion;
@@ -95,16 +109,16 @@ void Distance::readCalibrationData() {
 	}
 	path = ("/home/benny/kinect_cal_data/calib_pose.yaml");
 	if (fs.open(path, cv::FileStorage::READ)) {
-			fs["rotation"] >> Distance::extrinsicsRotation;
-			fs["translation"] >> Distance::extrinsicsTranslation;
-			fs.release();
-		} else {
-			std::cerr << "couldn't read calibration '" << path << "'!" << std::endl;
-		}
+		fs["rotation"] >> Distance::extrinsicsRotation;
+		fs["translation"] >> Distance::extrinsicsTranslation;
+		fs.release();
+	} else {
+		std::cerr << "couldn't read calibration '" << path << "'!" << std::endl;
+	}
 
 //	do i need this?
 //	cv::initUndistortRectifyMap(cameraMatrix, distortion, cv::Mat(), cameraMatrix, size, CV_32FC1, mapX, mapY);
-	std::cout << Distance::cameraMatrix << std::endl;
+//	std::cout << Distance::cameraMatrix << std::endl;
 	Distance::fx = Distance::cameraMatrix.at<double>(0, 0);
 	Distance::fy = Distance::cameraMatrix.at<double>(1, 1);
 	Distance::cx = Distance::cameraMatrix.at<double>(0, 2);
@@ -133,31 +147,83 @@ void Distance::drawDetailsInImage(double normalDistance) {
 	cv::imshow(Distance::KINECT_IMAGE, coloredMat);
 }
 
-void Distance::imageCallback(const sensor_msgs::ImageConstPtr color) {
-	printf("imageCallback called");
-	readImage(color, Distance::color);
-	if(Distance::color.type() == 2)
-	{
+void Distance::findChessboardCorners() {
+	if (Distance::color.type() == 2) {
 		std::cout << "converted from 16bit to 8 bit" << std::endl;
 		Distance::color.convertTo(Distance::color, CV_8U, 0.00390625);
 	}
-	Distance::chessBoardFound = false;
-	Distance::chessBoardFound = cv::findChessboardCorners(Distance::color,
-			Distance::boardDims, Distance::output, cv::CALIB_CB_ADAPTIVE_THRESH);
+	if (mode_ir) {
+		Distance::chessBoardFound = cv::findChessboardCorners(Distance::color,
+				Distance::boardDims, Distance::output,
+				cv::CALIB_CB_ADAPTIVE_THRESH);
+	}
 	Distance::update = true;
 }
 
-void Distance::syncedImageCallback(const sensor_msgs::ImageConstPtr color, const sensor_msgs::ImageConstPtr depth) {
+void Distance::imageCallback(const sensor_msgs::ImageConstPtr color) {
+	readImage(color, Distance::color);
+	findChessboardCorners();
+}
+
+void Distance::syncedImageCallback(const sensor_msgs::ImageConstPtr color,
+		const sensor_msgs::ImageConstPtr depth) {
 	readImage(color, Distance::color);
 	readImage(depth, Distance::depth);
-	Distance::chessBoardFound = false;
-	Distance::chessBoardFound = cv::findChessboardCorners(Distance::color,
-			Distance::boardDims, Distance::output, cv::CALIB_CB_FAST_CHECK);
-	Distance::update = true;
+	findChessboardCorners();
+}
+
+void calculateDistanceToChessboardCorners(double normalDistance, Distance& d) {
+	cv::Mat distanceOfCorners(7, 5, CV_64F);
+	for (int i = 0, idx = 0; i < distanceOfCorners.rows; i++) {
+		for (int j = 0; j < distanceOfCorners.cols; j++, idx++) {
+			double distanceOfPoint = d.computeDistanceToPoint(
+					d.output.at<cv::Point2f>(idx), d.normal, normalDistance);
+			distanceOfCorners.at<double>(i, j) = distanceOfPoint;
+		}
+	}
+}
+
+void stupidColorMap(const Distance& d) {
+	//	cv::namedWindow(COLOR_MAP, cv::WINDOW_AUTOSIZE);
+	double min;
+	double max;
+	cv::minMaxIdx(d.depth, &min, &max);
+	double scale = 255 / (max - min);
+	std::cout << min << " " << max << std::endl;
+	// expand your range to 0..255. Similar to histEq();
+	d.depth.convertTo(d.adjMap, CV_8UC1, scale, -min * scale);
+	//	std::cout << d.adjMap << std::endl;
+	cv::applyColorMap(d.adjMap, d.colorMap, cv::COLORMAP_JET);
+	//	cv::Mat largeColorMap;
+	//	cv::resize(d.colorMap, largeColorMap,
+	//			cv::Size(d.colorMap.cols * 100, d.colorMap.rows * 100));
+	//	cv::imshow(Distance::COLOR_MAP, d.colorMap);
+}
+
+void findMinMax(cv::Mat &mat, int &min, int&max) {
+	int nRows = mat.rows;
+	int nCols = mat.cols;
+
+	if (mat.isContinuous()) {
+		nCols *= nRows;
+		nRows = 1;
+	}
+
+	int i, j;
+	uint8_t* p;
+	for (i = 0; i < nRows; ++i) {
+		p = mat.ptr<uint8_t>(i);
+		for (j = 0; j < nCols; ++j) {
+			min = std::min(min, static_cast<int>(*p));
+			max = std::max(max, static_cast<int>(*p));
+		}
+	}
+	std::cout << "min: " << min << std::endl;
+	std::cout << "max: " << max << std::endl;
 }
 
 int main(int argc, char **argv) {
-	Distance d(cv::Size(7, 5), argc, argv);
+	Distance d(true, true, cv::Size(7, 5), argc, argv);
 
 	cv::namedWindow(Distance::KINECT_IMAGE, cv::WINDOW_AUTOSIZE);
 
@@ -177,32 +243,16 @@ int main(int argc, char **argv) {
 		r.sleep();
 	}
 	std::cout << "chessboard found" << std::endl;
+
 	d.normal = cv::Mat(3, 1, CV_64F);
 	double normalDistance = d.getNormalWithDistance(d.output, d.normal);
 	d.drawDetailsInImage(normalDistance);
-	cv::Mat distanceOfCorners(7, 5, CV_64F);
-	for (int i = 0, idx = 0; i < distanceOfCorners.rows; i++) {
-		for (int j = 0; j < distanceOfCorners.cols; j++, idx++) {
-			double distanceOfPoint = d.computeDistanceToPoint(
-					d.output.at<cv::Point2f>(idx), d.normal, normalDistance);
-			distanceOfCorners.at<double>(i, j) = distanceOfPoint;
-		}
-	}
+	calculateDistanceToChessboardCorners(normalDistance, d);
 
+//	stupidColorMap(d);
 
-//	cv::namedWindow(COLOR_MAP, cv::WINDOW_AUTOSIZE);
-	double min;
-	double max;
-	cv::minMaxIdx(d.depth, &min, &max);
-	double scale = 255 / (max - min);
-	std::cout << min << " " << max << std::endl;
-	// expand your range to 0..255. Similar to histEq();
-	d.depth.convertTo(d.adjMap, CV_8UC1, scale, -min * scale);
-//	std::cout << d.adjMap << std::endl;
-	cv::applyColorMap(d.adjMap, d.colorMap, cv::COLORMAP_JET);
-//	cv::Mat largeColorMap;
-//	cv::resize(d.colorMap, largeColorMap,
-//			cv::Size(d.colorMap.cols * 100, d.colorMap.rows * 100));
-//	cv::imshow(Distance::COLOR_MAP, d.colorMap);
+	int min = 0;
+	int max = 0;
+	findMinMax(d.color, min, max);
 	cv::waitKey();
 }

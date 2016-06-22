@@ -28,18 +28,21 @@ private:
 	cv::Mat cameraMatrix, distortion, rvec, rotation, translation;
 	double fx, fy, cx, cy;
 	ros::Subscriber sub;
+	bool mode_ir, mode_synced;
 
-	void createSyncedSubscriber(ros::NodeHandle &nh);
-	void createSimpleSubscriber(ros::NodeHandle nh);
+	void createSyncedSubscriber(ros::NodeHandle& nh, char const *topic);
+	void createSimpleSubscriber(ros::NodeHandle nh, char const *topic);
+	void findChessboardCorners();
 
 public:
 	const static char* KINECT_IMAGE;
 	const static char* COLOR_MAP;
 	bool chessBoardFound, update;
-	cv::Mat normal, adjMap, colorMap, color, depth, output, extrinsicsRotation, extrinsicsTranslation;
+	cv::Mat normal, adjMap, colorMap, color, depth, output, extrinsicsRotation,
+			extrinsicsTranslation;
 	const cv::Size boardDims;
 
-	Distance(const cv::Size &size, int argc, char **argv);
+	Distance(bool mode_ir, bool mode_synced, const cv::Size &size, int argc, char **argv);
 	virtual ~Distance();
 	void readCalibrationData();
 	void createBoardPoints();
