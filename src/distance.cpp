@@ -183,24 +183,26 @@ void calculateDistanceToChessboardCorners(double normalDistance, Distance& d) {
 	}
 }
 
-void stupidColorMap(const Distance& d) {
-	//	cv::namedWindow(COLOR_MAP, cv::WINDOW_AUTOSIZE);
-	double min;
-	double max;
-	cv::minMaxIdx(d.depth, &min, &max);
-	double scale = 255 / (max - min);
-	std::cout << min << " " << max << std::endl;
-	// expand your range to 0..255. Similar to histEq();
-	d.depth.convertTo(d.adjMap, CV_8UC1, scale, -min * scale);
-	//	std::cout << d.adjMap << std::endl;
-	cv::applyColorMap(d.adjMap, d.colorMap, cv::COLORMAP_JET);
+void calculateDistanceToPlane(cv::Mat mat, double normalDistance, Distance& d) {
+	for (int i = 0, idx = 0; i < mat.rows; i++) {
+		for (int j = 0; j < mat.cols; j++, idx++) {
+			double distanceOfPoint = d.computeDistanceToPoint(cv::Point2i(i, j),
+					d.normal, normalDistance);
+			mat.at<double>(i, j) = distanceOfPoint;
+		}
+	}
+}
+
+void stupidColorMap(cv::Mat mat) {
+	cv::namedWindow(Distance::COLOR_MAP, cv::WINDOW_AUTOSIZE);
+	cv::applyColorMap(mat, mat, cv::COLORMAP_JET);
 	//	cv::Mat largeColorMap;
 	//	cv::resize(d.colorMap, largeColorMap,
 	//			cv::Size(d.colorMap.cols * 100, d.colorMap.rows * 100));
-	//	cv::imshow(Distance::COLOR_MAP, d.colorMap);
+	cv::imshow(Distance::COLOR_MAP, mat);
 }
 
-void findMinMax(cv::Mat &mat, int &min, int&max) {
+void findMinMax(const cv::Mat &mat, int &min, int&max) {
 	int nRows = mat.rows;
 	int nCols = mat.cols;
 
@@ -210,10 +212,11 @@ void findMinMax(cv::Mat &mat, int &min, int&max) {
 	}
 
 	int i, j;
-	uint8_t* p;
+	uchar* p;
 	for (i = 0; i < nRows; ++i) {
-		p = mat.ptr<uint8_t>(i);
+//		p = mat.ptr<uchar*>(i);
 		for (j = 0; j < nCols; ++j) {
+			std::cout << p[j] << " - ";
 			min = std::min(min, static_cast<int>(*p));
 			max = std::max(max, static_cast<int>(*p));
 		}
@@ -244,15 +247,62 @@ int main(int argc, char **argv) {
 	}
 	std::cout << "chessboard found" << std::endl;
 
+	// get the normal and distance
 	d.normal = cv::Mat(3, 1, CV_64F);
 	double normalDistance = d.getNormalWithDistance(d.output, d.normal);
+
+	// draw the beautiful cv image
 	d.drawDetailsInImage(normalDistance);
-	calculateDistanceToChessboardCorners(normalDistance, d);
 
-//	stupidColorMap(d);
+	// calculate the distance to every single pixel
+	cv::Mat calculatedPlane(d.color.rows, d.color.cols, CV_64F);
+	calculateDistanceToPlane(calculatedPlane, normalDistance, d);
+	double min, max;
 
-	int min = 0;
-	int max = 0;
-	findMinMax(d.color, min, max);
+	// make the values millimeters and transform them to CV_16S
+	calculatedPlane.convertTo(calculatedPlane, CV_16S, 1000);
+	cv::minMaxLoc(calculatedPlane, &min, &max);
+	std::cout << "values for the calculated plane:" << std::endl;
+	std::cout << "min value: " << min << std::endl;
+	std::cout << "max value: " << max << std::endl;
+
+	// create a new mat with signed ints
+	cv::Mat signedDepth;
+	d.depth.convertTo(signedDepth, CV_16S);
+	cv::minMaxLoc(signedDepth, &min, &max);
+	std::cout << "values for the signed depth image:" << std::endl;
+	std::cout << "min value: " << min << std::endl;
+	std::cout << "max value: " << max << std::endl;
+
+	// subtract the calculated and measured distances
+	cv::Mat difference(d.color.rows, d.color.cols, CV_16S);
+	difference = signedDepth - calculatedPlane;
+
+	// find minmax and reshape to values from 0 to 255
+	cv::minMaxLoc(difference, &min, &max);
+	std::cout << "values for the intial difference:" << std::endl;
+	std::cout << "min value: " << min << std::endl;
+	std::cout << "max value: " << max << std::endl;
+	std::cout << "mean: " << cv::mean(difference) << std::endl;
+
+	// shift the pixel values so that the smallest value is 0
+	difference += -min;
+	cv::minMaxLoc(difference, &min, &max);
+	std::cout << "values after shifting:" << std::endl;
+	std::cout << "min value: " << min << std::endl;
+	std::cout << "max value: " << max << std::endl;
+
+	// scale the pixel values so the biggest is 255 and the smallest 0
+	difference.convertTo(difference, CV_8UC1, 255.0 / (max - min), -min);
+	cv::minMaxLoc(difference, &min, &max);
+	std::cout << "values after scaling:" << std::endl;
+	std::cout << "min value: " << min << std::endl;
+	std::cout << "max value: " << max << std::endl;
+
+	std::cout << "mean: " << cv::mean(difference) << std::endl;
+
+	// show the colormap
+	stupidColorMap(difference);
+
 	cv::waitKey();
 }
