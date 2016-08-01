@@ -36,6 +36,7 @@ private:
 
 public:
 	const static char* KINECT_IMAGE;
+	const static char* IR_IMAGE;
 	const static char* COLOR_MAP;
 	bool chessBoardFound, update;
 	cv::Mat normal, adjMap, colorMap, color, depth, output, extrinsicsRotation,

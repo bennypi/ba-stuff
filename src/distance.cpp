@@ -7,8 +7,9 @@
 
 #include "distance.h"
 
-const char* Distance::KINECT_IMAGE = "KINECT_IMAGE";
+const char* Distance::KINECT_IMAGE = "COLOR_IMAGE";
 const char* Distance::COLOR_MAP = "COLOR_MAP";
+const char* Distance::IR_IMAGE = "IR_IMAGE";
 const char* IR_TOPIC = "/kinect2/sd/image_ir";
 const char* DEPTH_TOPIC = "/kinect2/sd/image_depth";
 const char* COLOR_TOPIC = "/kinect2/hd/image_color";
@@ -194,15 +195,16 @@ void calculateDistanceToPlane(cv::Mat mat, double normalDistance, Distance& d) {
 }
 
 void stupidColorMap(cv::Mat mat) {
+	if (mat.type() == 3) {
+		mat.convertTo(mat, CV_8U);
+	}
 	cv::namedWindow(Distance::COLOR_MAP, cv::WINDOW_AUTOSIZE);
-	cv::applyColorMap(mat, mat, cv::COLORMAP_JET);
-	//	cv::Mat largeColorMap;
-	//	cv::resize(d.colorMap, largeColorMap,
-	//			cv::Size(d.colorMap.cols * 100, d.colorMap.rows * 100));
+	cv::applyColorMap(mat, mat, cv::COLORMAP_RAINBOW);
 	cv::imshow(Distance::COLOR_MAP, mat);
 }
 
-void findMinMax(const cv::Mat &mat, int &min, int&max) {
+void shrinkMatrix(cv::Mat &mat) {
+	// cut off every value smaller and bigger than -128 and 127
 	int nRows = mat.rows;
 	int nCols = mat.cols;
 
@@ -212,17 +214,14 @@ void findMinMax(const cv::Mat &mat, int &min, int&max) {
 	}
 
 	int i, j;
-	uchar* p;
+	short* p;
 	for (i = 0; i < nRows; ++i) {
-//		p = mat.ptr<uchar*>(i);
+		p = mat.ptr<short>(i);
 		for (j = 0; j < nCols; ++j) {
-			std::cout << p[j] << " - ";
-			min = std::min(min, static_cast<int>(*p));
-			max = std::max(max, static_cast<int>(*p));
+			p[j] = ((int16_t) p[j] < -128) ? -128 : p[j];
+			p[j] = ((int16_t) p[j] > 127) ? 127 : p[j];
 		}
 	}
-	std::cout << "min: " << min << std::endl;
-	std::cout << "max: " << max << std::endl;
 }
 
 int main(int argc, char **argv) {
@@ -247,6 +246,24 @@ int main(int argc, char **argv) {
 	}
 	std::cout << "chessboard found" << std::endl;
 
+	// trying to show IR image
+	cv::Mat depth;
+	d.depth.copyTo(depth);
+	double low, high;
+	cv::minMaxLoc(depth, &low, &high);
+	std::cout << "values for the depth:" << std::endl;
+	std::cout << "min value: " << low << std::endl;
+	std::cout << "max value: " << high << std::endl;
+	double alpha = 255 / high;
+	depth.convertTo(depth, 0, alpha);
+	cv::minMaxLoc(depth, &low, &high);
+	std::cout << "values for the depth:" << std::endl;
+	std::cout << "min value: " << low << std::endl;
+	std::cout << "max value: " << high << std::endl;
+	cv::applyColorMap(depth, depth, cv::COLORMAP_RAINBOW);
+	cv::namedWindow(Distance::IR_IMAGE, cv::WINDOW_AUTOSIZE);
+	cv::imshow(Distance::IR_IMAGE, d.depth);
+
 	// get the normal and distance
 	d.normal = cv::Mat(3, 1, CV_64F);
 	double normalDistance = d.getNormalWithDistance(d.output, d.normal);
@@ -269,7 +286,11 @@ int main(int argc, char **argv) {
 	// create a new mat with signed ints
 	cv::Mat signedDepth;
 	d.depth.convertTo(signedDepth, CV_16S);
-	cv::minMaxLoc(signedDepth, &min, &max);
+
+	cv::Mat mask = cv::Mat::zeros(signedDepth.size(), CV_8UC1);
+	mask.setTo(255, signedDepth > 0);
+
+	cv::minMaxLoc(signedDepth, &min, &max, 0, 0, mask);
 	std::cout << "values for the signed depth image:" << std::endl;
 	std::cout << "min value: " << min << std::endl;
 	std::cout << "max value: " << max << std::endl;
@@ -278,27 +299,20 @@ int main(int argc, char **argv) {
 	cv::Mat difference(d.color.rows, d.color.cols, CV_16S);
 	difference = signedDepth - calculatedPlane;
 
-	// find minmax and reshape to values from 0 to 255
+	// find minmax
 	cv::minMaxLoc(difference, &min, &max);
 	std::cout << "values for the intial difference:" << std::endl;
 	std::cout << "min value: " << min << std::endl;
 	std::cout << "max value: " << max << std::endl;
 	std::cout << "mean: " << cv::mean(difference) << std::endl;
 
-	// shift the pixel values so that the smallest value is 0
-	difference += -min;
+	shrinkMatrix(difference);
+	// shift values to 0...255
+	cv::convertScaleAbs(difference, difference, 1, 128);
 	cv::minMaxLoc(difference, &min, &max);
-	std::cout << "values after shifting:" << std::endl;
+	std::cout << "values after shrinking:" << std::endl;
 	std::cout << "min value: " << min << std::endl;
 	std::cout << "max value: " << max << std::endl;
-
-	// scale the pixel values so the biggest is 255 and the smallest 0
-	difference.convertTo(difference, CV_8UC1, 255.0 / (max - min), -min);
-	cv::minMaxLoc(difference, &min, &max);
-	std::cout << "values after scaling:" << std::endl;
-	std::cout << "min value: " << min << std::endl;
-	std::cout << "max value: " << max << std::endl;
-
 	std::cout << "mean: " << cv::mean(difference) << std::endl;
 
 	// show the colormap
