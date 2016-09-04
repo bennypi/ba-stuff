@@ -21,6 +21,8 @@
 #include <cv_bridge/cv_bridge.h>
 #include <opencv2/opencv.hpp>
 
+#include <pcl/point_cloud.h>
+
 class Distance {
 private:
 	const float boardSize = 0.03;
@@ -38,7 +40,7 @@ public:
 	const static char* KINECT_IMAGE;
 	const static char* IR_IMAGE;
 	const static char* COLOR_MAP;
-	bool chessBoardFound, update;
+	bool chessBoardFound, update, cloudEnabled;
 	cv::Mat normal, adjMap, colorMap, color, depth, output, extrinsicsRotation,
 			extrinsicsTranslation;
 	const cv::Size boardDims;

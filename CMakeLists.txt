@@ -15,10 +15,12 @@ find_package(catkin REQUIRED COMPONENTS
   rostime
   sensor_msgs
   std_msgs
+  pcl_conversions
+  pcl_ros
 )
 
 ## System dependencies are found with CMake's conventions
-# find_package(Boost REQUIRED COMPONENTS system)
+ find_package(PCL REQUIRED)
 
 
 ## Uncomment this if the package has a setup.py. This macro ensures

@@ -203,8 +203,7 @@ void stupidColorMap(cv::Mat mat) {
 	cv::imshow(Distance::COLOR_MAP, mat);
 }
 
-void shrinkMatrix(cv::Mat &mat) {
-	// cut off every value smaller and bigger than -128 and 127
+void shrinkMatrix(cv::Mat &mat, int min, int max) {
 	int nRows = mat.rows;
 	int nCols = mat.cols;
 
@@ -218,14 +217,28 @@ void shrinkMatrix(cv::Mat &mat) {
 	for (i = 0; i < nRows; ++i) {
 		p = mat.ptr<short>(i);
 		for (j = 0; j < nCols; ++j) {
-			p[j] = ((int16_t) p[j] < -128) ? -128 : p[j];
-			p[j] = ((int16_t) p[j] > 127) ? 127 : p[j];
+			p[j] = ((int16_t) p[j] < min) ? min : p[j];
+			p[j] = ((int16_t) p[j] > max) ? max : p[j];
 		}
 	}
 }
 
+void showStatistics(const cv::Mat& mat, double& low, double& high) {
+	cv::minMaxLoc(mat, &low, &high);
+	std::cout << "min value: " << low << std::endl;
+	std::cout << "max value: " << high << std::endl;
+}
+
 int main(int argc, char **argv) {
 	Distance d(true, true, cv::Size(7, 5), argc, argv);
+	d.cloudEnabled = false;
+	if (argc == 2) {
+		std::string arg = argv[1];
+		if (arg == "cloud") {
+			std::cout << "displaying cloud" << std::endl;
+			d.cloudEnabled = true;
+		}
+	}
 
 	cv::namedWindow(Distance::KINECT_IMAGE, cv::WINDOW_AUTOSIZE);
 
@@ -250,19 +263,18 @@ int main(int argc, char **argv) {
 	cv::Mat depth;
 	d.depth.copyTo(depth);
 	double low, high;
-	cv::minMaxLoc(depth, &low, &high);
 	std::cout << "values for the depth:" << std::endl;
-	std::cout << "min value: " << low << std::endl;
-	std::cout << "max value: " << high << std::endl;
+	showStatistics(depth, low, high);
+	shrinkMatrix(depth, 0, 1500);
+	showStatistics(depth, low, high);
 	double alpha = 255 / high;
 	depth.convertTo(depth, 0, alpha);
-	cv::minMaxLoc(depth, &low, &high);
 	std::cout << "values for the depth:" << std::endl;
-	std::cout << "min value: " << low << std::endl;
-	std::cout << "max value: " << high << std::endl;
-	cv::applyColorMap(depth, depth, cv::COLORMAP_RAINBOW);
+	showStatistics(depth, low, high);
+	cv::Mat coloredDepth;
+	cv::applyColorMap(depth, coloredDepth, cv::COLORMAP_RAINBOW);
 	cv::namedWindow(Distance::IR_IMAGE, cv::WINDOW_AUTOSIZE);
-	cv::imshow(Distance::IR_IMAGE, d.depth);
+	cv::imshow(Distance::IR_IMAGE, coloredDepth);
 
 	// get the normal and distance
 	d.normal = cv::Mat(3, 1, CV_64F);
@@ -278,11 +290,8 @@ int main(int argc, char **argv) {
 
 	// make the values millimeters and transform them to CV_16S
 	calculatedPlane.convertTo(calculatedPlane, CV_16S, 1000);
-	cv::minMaxLoc(calculatedPlane, &min, &max);
 	std::cout << "values for the calculated plane:" << std::endl;
-	std::cout << "min value: " << min << std::endl;
-	std::cout << "max value: " << max << std::endl;
-
+	showStatistics(calculatedPlane, min, max);
 	// create a new mat with signed ints
 	cv::Mat signedDepth;
 	d.depth.convertTo(signedDepth, CV_16S);
@@ -290,8 +299,8 @@ int main(int argc, char **argv) {
 	cv::Mat mask = cv::Mat::zeros(signedDepth.size(), CV_8UC1);
 	mask.setTo(255, signedDepth > 0);
 
-	cv::minMaxLoc(signedDepth, &min, &max, 0, 0, mask);
 	std::cout << "values for the signed depth image:" << std::endl;
+	cv::minMaxLoc(signedDepth, &min, &max, 0, 0, mask);
 	std::cout << "min value: " << min << std::endl;
 	std::cout << "max value: " << max << std::endl;
 
@@ -300,19 +309,16 @@ int main(int argc, char **argv) {
 	difference = signedDepth - calculatedPlane;
 
 	// find minmax
-	cv::minMaxLoc(difference, &min, &max);
 	std::cout << "values for the intial difference:" << std::endl;
-	std::cout << "min value: " << min << std::endl;
-	std::cout << "max value: " << max << std::endl;
+	showStatistics(difference, min, max);
 	std::cout << "mean: " << cv::mean(difference) << std::endl;
 
-	shrinkMatrix(difference);
+	// cut off every value smaller and bigger than -128 and 127
+	shrinkMatrix(difference, -128, 127);
 	// shift values to 0...255
 	cv::convertScaleAbs(difference, difference, 1, 128);
-	cv::minMaxLoc(difference, &min, &max);
 	std::cout << "values after shrinking:" << std::endl;
-	std::cout << "min value: " << min << std::endl;
-	std::cout << "max value: " << max << std::endl;
+	showStatistics(difference, min, max);
 	std::cout << "mean: " << cv::mean(difference) << std::endl;
 
 	// show the colormap
