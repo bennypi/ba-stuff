@@ -20,7 +20,7 @@ find_package(catkin REQUIRED COMPONENTS
 )
 
 ## System dependencies are found with CMake's conventions
- find_package(PCL REQUIRED)
+find_package(PCL REQUIRED)
 
 
 ## Uncomment this if the package has a setup.py. This macro ensures
@@ -109,7 +109,7 @@ find_package(catkin REQUIRED COMPONENTS
 ## CATKIN_DEPENDS: catkin_packages dependent projects also need
 ## DEPENDS: system dependencies of this project that dependent projects also need
 catkin_package(
-#  INCLUDE_DIRS include
+  INCLUDE_DIRS include
 #  LIBRARIES ba-stuff
 #  CATKIN_DEPENDS compressed_depth_image_transport compressed_image_transport cv_bridge image_transport kinect2_bridge message_filters roscpp rostime sensor_msgs std_msgs
 #  DEPENDS system_lib
@@ -123,7 +123,7 @@ catkin_package(
 ## Your package locations should be listed before other locations
 # include_directories(include)
 include_directories(
-  ${catkin_INCLUDE_DIRS}
+  ${catkin_INCLUDE_DIRS} include
 )
 
 ## Declare a C++ library
@@ -137,7 +137,7 @@ include_directories(
 # add_dependencies(ba-stuff ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
 
 ## Declare a C++ executable
-add_executable(distance src/distance.cpp)
+add_executable(distance src/${PROJECT_NAME}/distance.cpp)
 
 ## Add cmake target dependencies of the executable
 ## same as for the library above

@@ -5,7 +5,7 @@
  *      Author: benny
  */
 
-#include "distance.h"
+#include <ba-stuff/distance.h>
 
 const char* Distance::KINECT_IMAGE = "COLOR_IMAGE";
 const char* Distance::COLOR_MAP = "COLOR_MAP";
