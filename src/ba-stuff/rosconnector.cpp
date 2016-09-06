@@ -27,8 +27,7 @@ RosConnector::RosConnector(ros::NodeHandle nh, std::string colorTopic,
 					ColorIrDepthSyncPolicy(4), *subImageColor, *subImageDepth);
 	sync->registerCallback(
 			boost::bind(&RosConnector::syncedImageCallback, this, _1, _2));
-	while (!update)
-	{
+	while (!update) {
 		ros::spinOnce();
 	}
 }
@@ -40,9 +39,19 @@ RosConnector::~RosConnector() {
 void RosConnector::syncedImageCallback(const sensor_msgs::ImageConstPtr color,
 		const sensor_msgs::ImageConstPtr depth) {
 	update = true;
+	cv::Mat tmpColor, tmpDepth;
+	readImage(color, tmpColor);
+	readImage(depth, tmpDepth);
+
+	// IR image input
+	if (tmpColor.type() == CV_16U) {
+		cv::Mat tmp;
+		tmpColor.convertTo(tmp, CV_8U, 0.02);
+		cv::cvtColor(tmp, tmpColor, CV_GRAY2BGR);
+	}
 	lock.lock();
-	readImage(color, colorMat);
-	readImage(depth, depthMat);
+	colorMat = tmpColor;
+	depthMat = tmpDepth;
 	lock.unlock();
 }
 

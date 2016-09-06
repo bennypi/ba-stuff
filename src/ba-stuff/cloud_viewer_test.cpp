@@ -18,11 +18,12 @@
 #include <pcl/io/pcd_io.h>
 #include <pcl/visualization/cloud_viewer.h>
 
-const char* IR_TOPIC = "/kinect2/sd/image_ir";
-const char* DEPTH_TOPIC = "/kinect2/sd/image_depth";
-double fx, fy, cx, cy;
+const char* IR_TOPIC = "/kinect2/sd/image_ir_rect";
+const char* DEPTH_TOPIC = "/kinect2/sd/image_depth_rect";
+float fx, fy, cx, cy;
 cv::Mat cameraMatrix, distortion, rvec, rotation, translation,
 		extrinsicsRotation, extrinsicsTranslation, lookupY, lookupX;
+bool running;
 
 void readCalibrationData() {
 	cv::FileStorage fs;
@@ -44,10 +45,12 @@ void readCalibrationData() {
 		std::cerr << "couldn't read calibration '" << path << "'!" << std::endl;
 	}
 
-	fx = cameraMatrix.at<double>(0, 0);
-	fy = cameraMatrix.at<double>(1, 1);
+	fx = 1.0f / cameraMatrix.at<double>(0, 0);
+	fy = 1.0f / cameraMatrix.at<double>(1, 1);
 	cx = cameraMatrix.at<double>(0, 2);
 	cy = cameraMatrix.at<double>(1, 2);
+
+	std::cout << cameraMatrix << std::endl;
 }
 
 void createCloud(const cv::Mat &depth, const cv::Mat &color,
@@ -55,7 +58,7 @@ void createCloud(const cv::Mat &depth, const cv::Mat &color,
 	const float badPoint = std::numeric_limits<float>::quiet_NaN();
 
 #pragma omp parallel for
-	std::cout << "number of points: " << depth.rows *depth.cols << std::endl;
+	std::cout << "number of points: " << depth.rows * depth.cols << std::endl;
 	int count = 0;
 	for (int r = 0; r < depth.rows; ++r) {
 		pcl::PointXYZRGBA *itP = &cloud->points[r * depth.cols];
@@ -78,10 +81,17 @@ void createCloud(const cv::Mat &depth, const cv::Mat &color,
 			itP->z = depthValue;
 			itP->x = *itX * depthValue;
 			itP->y = y * depthValue;
-			itP->b = 100;
-			itP->g = 0;
+			itP->b = 0;
+			itP->g = 255;
 			itP->r = 0;
 			itP->a = 255;
+			if (r % 10 == 0 && c % 10 == 0) {
+//				std::cout << "----start-----" << std::endl;
+//				std::cout << itP->z << std::endl;
+//				std::cout << itP->x << std::endl;
+//				std::cout << itP->y << std::endl;
+//				std::cout << "----end-----" << std::endl;
+			}
 		}
 	}
 	std::cout << count << std::endl;
@@ -100,6 +110,16 @@ void createLookup(size_t width, size_t height) {
 	it = lookupX.ptr<float>();
 	for (size_t c = 0; c < width; ++c, ++it) {
 		*it = (c - cx) * fx;
+	}
+}
+void keyboardEvent(const pcl::visualization::KeyboardEvent &event, void *) {
+	if (event.keyUp()) {
+		switch (event.getKeyCode()) {
+		case 27:
+		case 'q':
+			running = false;
+			break;
+		}
 	}
 }
 
@@ -131,17 +151,37 @@ int main(int argc, char **argv) {
 			new pcl::visualization::PCLVisualizer("Cloud Viewer"));
 	const std::string cloudName = "rendered";
 
+	visualizer->addPointCloud(cloud, cloudName);
 	createCloud(depth, ir, cloud);
 
-	visualizer->addPointCloud(cloud, cloudName);
+	pcl::PointXYZRGBA point = cloud->at(0);
+	std::cout << "----start-----" << std::endl;
+	std::cout << point.x << std::endl;
+	std::cout << point.y << std::endl;
+	std::cout << point.z << std::endl;
+	std::cout << "----end-----" << std::endl;
+	point = cloud->at(1000);
+	std::cout << "----start-----" << std::endl;
+	std::cout << point.x << std::endl;
+	std::cout << point.y << std::endl;
+	std::cout << point.z << std::endl;
+	std::cout << "----end-----" << std::endl;
+
 	visualizer->setPointCloudRenderingProperties(
 			pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 1, cloudName);
 	visualizer->initCameraParameters();
-	visualizer->setBackgroundColor(100, 0, 0);
+	visualizer->setBackgroundColor(0, 0, 0);
 	visualizer->setPosition(ir.cols, 0);
 	visualizer->setSize(ir.cols, ir.rows);
 	visualizer->setShowFPS(true);
 	visualizer->setCameraPosition(0, 0, 0, 0, -1, 0);
+	visualizer->updatePointCloud(cloud, cloudName);
+	visualizer->registerKeyboardCallback(keyboardEvent);
+	running = true;
+	while (running) {
+		visualizer->spinOnce(10);
+
+	}
 
 	cv::waitKey();
 }
