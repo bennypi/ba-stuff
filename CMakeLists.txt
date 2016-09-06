@@ -1,6 +1,8 @@
 cmake_minimum_required(VERSION 2.8.3)
 project(ba-stuff)
 
+SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11")
+
 ## Find catkin macros and libraries
 ## if COMPONENTS list like find_package(catkin REQUIRED COMPONENTS xyz)
 ## is used, also find other catkin packages
@@ -127,9 +129,9 @@ include_directories(
 )
 
 ## Declare a C++ library
-# add_library(ba-stuff
-#   src/${PROJECT_NAME}/ba-stuff.cpp
-# )
+#add_library(rosconnector
+#  src/${PROJECT_NAME}/rosconnector.cpp
+#)
 
 ## Add cmake target dependencies of the library
 ## as an example, code may need to be generated before libraries
@@ -139,12 +141,20 @@ include_directories(
 ## Declare a C++ executable
 add_executable(distance src/${PROJECT_NAME}/distance.cpp)
 
+add_executable(cloudViewerTest src/${PROJECT_NAME}/cloud_viewer_test.cpp src/${PROJECT_NAME}/rosconnector.cpp)
+
 ## Add cmake target dependencies of the executable
 ## same as for the library above
 add_dependencies(distance ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
 
+add_dependencies(cloudViewerTest ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
+
 ## Specify libraries to link a library or executable target against
 target_link_libraries(distance
+  ${catkin_LIBRARIES}
+)
+
+target_link_libraries(cloudViewerTest
   ${catkin_LIBRARIES}
 )
 
