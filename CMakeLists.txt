@@ -156,6 +156,8 @@ target_link_libraries(distance
 
 target_link_libraries(cloudViewerTest
   ${catkin_LIBRARIES}
+  ${OpenCV_LIBRARIES}
+  ${PCL_LIBRARIES}
 )
 
 #############
