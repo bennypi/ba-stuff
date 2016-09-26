@@ -23,15 +23,22 @@
 
 class RosConnector {
 public:
-	RosConnector(ros::NodeHandle nh, std::string colorTopic, std::string depthTopic);
+	RosConnector(ros::NodeHandle nh, std::string colorTopic,
+			std::string irTopic, std::string depthTopic);
 	virtual ~RosConnector();
-	void getNewImage(cv::Mat &image);
-	void getNewImage(cv::Mat &color, cv::Mat &depth);
+	void getColor(cv::Mat &color);
+	void getIr(cv::Mat &ir);
+	void getDepth(cv::Mat &depth);
+	void getColorDepth(cv::Mat &color, cv::Mat &depth);
+	void getIrDepth(cv::Mat &ir, cv::Mat &depth);
+	void getColorIrDepth(cv::Mat &color, cv::Mat &ir, cv::Mat &depth);
 
 private:
-	void syncedImageCallback(const sensor_msgs::ImageConstPtr color, const sensor_msgs::ImageConstPtr depth);
+	void syncedImageCallback(const sensor_msgs::ImageConstPtr color,
+			const sensor_msgs::ImageConstPtr ir,
+			const sensor_msgs::ImageConstPtr depth);
 	void readImage(const sensor_msgs::Image::ConstPtr msgImage, cv::Mat &image);
-	cv::Mat colorMat, depthMat, imageMat;
+	cv::Mat colorMat, depthMat, irMat;
 	ros::NodeHandle nh;
 	std::mutex lock;
 	bool update;

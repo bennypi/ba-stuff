@@ -6,6 +6,8 @@
  */
 
 #include <ba-stuff/rosconnector.h>
+#include <ba-stuff/distance.h>
+
 #include <stdlib.h>
 #include <stdio.h>
 #include <iostream>
@@ -18,6 +20,7 @@
 #include <pcl/io/pcd_io.h>
 #include <pcl/visualization/cloud_viewer.h>
 
+const char* COLOR_TOPIC= "/kinect2/sd/image_color_rect";
 const char* IR_TOPIC = "/kinect2/sd/image_ir_rect";
 const char* DEPTH_TOPIC = "/kinect2/sd/image_depth_rect";
 float fx, fy, cx, cy;
@@ -49,8 +52,6 @@ void readCalibrationData() {
 	fy = 1.0f / cameraMatrix.at<double>(1, 1);
 	cx = cameraMatrix.at<double>(0, 2);
 	cy = cameraMatrix.at<double>(1, 2);
-
-	std::cout << cameraMatrix << std::endl;
 }
 
 void createCloud(const cv::Mat &depth, const cv::Mat &color,
@@ -85,13 +86,6 @@ void createCloud(const cv::Mat &depth, const cv::Mat &color,
 			itP->g = 255;
 			itP->r = 0;
 			itP->a = 255;
-			if (r % 10 == 0 && c % 10 == 0) {
-//				std::cout << "----start-----" << std::endl;
-//				std::cout << itP->z << std::endl;
-//				std::cout << itP->x << std::endl;
-//				std::cout << itP->y << std::endl;
-//				std::cout << "----end-----" << std::endl;
-			}
 		}
 	}
 	std::cout << count << std::endl;
@@ -123,29 +117,51 @@ void keyboardEvent(const pcl::visualization::KeyboardEvent &event, void *) {
 	}
 }
 
-int main(int argc, char **argv) {
-	std::cout << "hello world" << std::endl;
-	ros::init(argc, argv, "cloudViewerTest");
-	ros::NodeHandle nh;
-	RosConnector con(nh, IR_TOPIC, DEPTH_TOPIC);
-	cv::Mat ir, depth;
-
-	readCalibrationData();
-
-	con.getNewImage(ir, depth);
-
-	const char* name = "image";
-	cv::namedWindow(name, cv::WINDOW_AUTOSIZE);
-	cv::imshow(name, ir);
-//	cv::waitKey();
-
-	pcl::PointCloud<pcl::PointXYZRGBA>::Ptr cloud = pcl::PointCloud<
-			pcl::PointXYZRGBA>::Ptr(new pcl::PointCloud<pcl::PointXYZRGBA>());
+void initializeCloud(const cv::Mat& ir,
+		pcl::PointCloud<pcl::PointXYZRGBA>::Ptr& cloud) {
+	cloud = pcl::PointCloud<pcl::PointXYZRGBA>::Ptr(
+			new pcl::PointCloud<pcl::PointXYZRGBA>());
 	cloud->height = ir.rows;
 	cloud->width = ir.cols;
 	cloud->is_dense = false;
 	cloud->points.resize(cloud->height * cloud->width);
 	createLookup(ir.cols, ir.rows);
+}
+
+void initializeVisualizer(
+		const pcl::visualization::PCLVisualizer::Ptr& visualizer,
+		const std::string& cloudName,
+		const pcl::PointCloud<pcl::PointXYZRGBA>::Ptr& cloud) {
+	visualizer->setPointCloudRenderingProperties(
+			pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 1, cloudName);
+	visualizer->initCameraParameters();
+	visualizer->setBackgroundColor(0, 0, 0);
+	visualizer->setPosition(cloud->width, 0);
+	visualizer->setSize(cloud->width, cloud->height);
+	visualizer->setShowFPS(true);
+	visualizer->setCameraPosition(0, 0, 0, 0, -1, 0);
+	visualizer->registerKeyboardCallback(keyboardEvent);
+}
+
+int main(int argc, char **argv) {
+	std::cout << "hello world" << std::endl;
+	ros::init(argc, argv, "cloudViewerTest");
+	ros::NodeHandle nh;
+	RosConnector con(nh,COLOR_TOPIC, IR_TOPIC, DEPTH_TOPIC);
+	cv::Mat ir, depth;
+	Distance d(true, cv::Size(7, 5), "/kinect2/sd/image_ir",
+				"/kinect2/sd/image_dept", "/kinect2/hd/image_color", argc, argv);
+
+	readCalibrationData();
+
+	con.getIrDepth(ir, depth);
+
+	const char* name = "image";
+	cv::namedWindow(name, cv::WINDOW_AUTOSIZE);
+	cv::imshow(name, ir);
+
+	pcl::PointCloud<pcl::PointXYZRGBA>::Ptr cloud;
+	initializeCloud(ir, cloud);
 
 	pcl::visualization::PCLVisualizer::Ptr visualizer(
 			new pcl::visualization::PCLVisualizer("Cloud Viewer"));
@@ -154,32 +170,12 @@ int main(int argc, char **argv) {
 	visualizer->addPointCloud(cloud, cloudName);
 	createCloud(depth, ir, cloud);
 
-	pcl::PointXYZRGBA point = cloud->at(0);
-	std::cout << "----start-----" << std::endl;
-	std::cout << point.x << std::endl;
-	std::cout << point.y << std::endl;
-	std::cout << point.z << std::endl;
-	std::cout << "----end-----" << std::endl;
-	point = cloud->at(1000);
-	std::cout << "----start-----" << std::endl;
-	std::cout << point.x << std::endl;
-	std::cout << point.y << std::endl;
-	std::cout << point.z << std::endl;
-	std::cout << "----end-----" << std::endl;
+	initializeVisualizer(visualizer, cloudName, cloud);
 
-	visualizer->setPointCloudRenderingProperties(
-			pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 1, cloudName);
-	visualizer->initCameraParameters();
-	visualizer->setBackgroundColor(0, 0, 0);
-	visualizer->setPosition(ir.cols, 0);
-	visualizer->setSize(ir.cols, ir.rows);
-	visualizer->setShowFPS(true);
-	visualizer->setCameraPosition(0, 0, 0, 0, -1, 0);
-	visualizer->updatePointCloud(cloud, cloudName);
-	visualizer->registerKeyboardCallback(keyboardEvent);
 	running = true;
 	while (running) {
 		visualizer->spinOnce(10);
+		visualizer->updatePointCloud(cloud, cloudName);
 
 	}
 

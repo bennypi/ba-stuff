@@ -10,9 +10,6 @@
 const char* Distance::KINECT_IMAGE = "COLOR_IMAGE";
 const char* Distance::COLOR_MAP = "COLOR_MAP";
 const char* Distance::IR_IMAGE = "IR_IMAGE";
-const char* IR_TOPIC = "/kinect2/sd/image_ir";
-const char* DEPTH_TOPIC = "/kinect2/sd/image_depth";
-const char* COLOR_TOPIC = "/kinect2/hd/image_color";
 
 void Distance::createSimpleSubscriber(ros::NodeHandle nh, char const *topic) {
 	Distance::sub = nh.subscribe(topic, 1000, &Distance::imageCallback, this);
@@ -33,20 +30,16 @@ void Distance::createSyncedSubscriber(ros::NodeHandle& nh, char const *topic) {
 	sync->registerCallback(
 			boost::bind(&Distance::syncedImageCallback, this, _1, _2));
 }
-
-Distance::Distance(bool mode_ir, bool mode_synced, const cv::Size &size,
-		int argc, char **argv) :
-		mode_ir(mode_ir), mode_synced(mode_synced), boardDims(size), chessBoardFound(
-				false), update(false) {
+Distance::Distance(bool mode_ir, const cv::Size &size, const char* ir_topic,
+		const char* depth_topic, const char* color_topic, int argc, char **argv) :
+		mode_ir(mode_ir), boardDims(size), IR_TOPIC(ir_topic), DEPTH_TOPIC(
+				depth_topic), COLOR_TOPIC(color_topic) {
 	ros::init(argc, argv, "distance");
 	ros::NodeHandle nh;
-//	ros::AsyncSpinner spinner(1);
+	chessBoardFound = false;
+	update = false;
 
-	if (mode_ir && !mode_synced) {
-		createSimpleSubscriber(nh, IR_TOPIC);
-	} else if (!mode_ir && !mode_synced) {
-		createSimpleSubscriber(nh, COLOR_TOPIC);
-	} else if (mode_ir && mode_synced) {
+	if (mode_ir) {
 		createSyncedSubscriber(nh, IR_TOPIC);
 	} else {
 		createSyncedSubscriber(nh, COLOR_TOPIC);
@@ -229,8 +222,10 @@ void showStatistics(const cv::Mat& mat, double& low, double& high) {
 	std::cout << "max value: " << high << std::endl;
 }
 
+/*
 int main(int argc, char **argv) {
-	Distance d(true, true, cv::Size(7, 5), argc, argv);
+	Distance d(true, cv::Size(7, 5), "/kinect2/sd/image_ir",
+			"/kinect2/sd/image_dept", "/kinect2/hd/image_color", argc, argv);
 	d.cloudEnabled = false;
 	if (argc == 2) {
 		std::string arg = argv[1];
@@ -326,3 +321,4 @@ int main(int argc, char **argv) {
 
 	cv::waitKey();
 }
+*/

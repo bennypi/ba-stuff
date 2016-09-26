@@ -30,7 +30,10 @@ private:
 	cv::Mat cameraMatrix, distortion, rvec, rotation, translation;
 	double fx, fy, cx, cy;
 	ros::Subscriber sub;
-	bool mode_ir, mode_synced;
+	bool mode_ir;
+	const char* IR_TOPIC;
+	const char* DEPTH_TOPIC;
+	const char* COLOR_TOPIC;
 
 	void createSyncedSubscriber(ros::NodeHandle& nh, char const *topic);
 	void createSimpleSubscriber(ros::NodeHandle nh, char const *topic);
@@ -45,7 +48,9 @@ public:
 			extrinsicsTranslation;
 	const cv::Size boardDims;
 
-	Distance(bool mode_ir, bool mode_synced, const cv::Size &size, int argc, char **argv);
+	Distance(bool mode_ir, const cv::Size &size, const char* ir_topic,
+			const char* depth_topic, const char* color_topic, int argc,
+			char **argv);
 	virtual ~Distance();
 	void readCalibrationData();
 	void createBoardPoints();
