@@ -29,38 +29,32 @@ private:
 	std::vector<cv::Point3f> board;
 	cv::Mat cameraMatrix, distortion, rvec, rotation, translation;
 	double fx, fy, cx, cy;
-	ros::Subscriber sub;
-	bool mode_ir;
-	const char* IR_TOPIC;
-	const char* DEPTH_TOPIC;
-	const char* COLOR_TOPIC;
-
-	void createSyncedSubscriber(ros::NodeHandle& nh, char const *topic);
-	void createSimpleSubscriber(ros::NodeHandle nh, char const *topic);
-	void findChessboardCorners();
-
-public:
 	const static char* KINECT_IMAGE;
 	const static char* IR_IMAGE;
 	const static char* COLOR_MAP;
-	bool chessBoardFound, update, cloudEnabled;
-	cv::Mat normal, adjMap, colorMap, color, depth, output, extrinsicsRotation,
+	double distanceToNormal;
+
+	void readCalibrationData();
+	void createBoardPoints();
+
+public:
+	bool chessBoardFound, update, modeIr;
+	cv::Mat color, ir, depth;
+	cv::Mat normal, adjMap, colorMap, intersectionsInPicture, extrinsicsRotation,
 			extrinsicsTranslation;
 	const cv::Size boardDims;
 
-	Distance(bool mode_ir, const cv::Size &size, const char* ir_topic,
-			const char* depth_topic, const char* color_topic, int argc,
-			char **argv);
+	Distance(bool modeIr, const cv::Size &size, int argc, char **argv);
 	virtual ~Distance();
-	void readCalibrationData();
-	void createBoardPoints();
+	bool findChessboardColor();
+	bool findChessboardIr();
+	void createChessBoardPlane(cv::Mat &output);
 	double getNormalWithDistance(cv::Mat points, cv::Mat &normal);
 	double computeDistanceToPoint(const cv::Point &pointImage,
 			const cv::Mat &normal, const double distance);
 	void drawDetailsInImage(double normalDistance);
-	void syncedImageCallback(const sensor_msgs::ImageConstPtr color,
-			const sensor_msgs::ImageConstPtr ir);
-	void imageCallback(const sensor_msgs::ImageConstPtr color);
+	void updateImages(cv::Mat &color, cv::Mat &ir, cv::Mat &depth);
+	void createMatForNormal(cv::Mat &output);
 };
 
 #endif /* BA_STUFF_SRC_DISTANCE_H_ */
