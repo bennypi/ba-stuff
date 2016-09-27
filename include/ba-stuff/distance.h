@@ -48,7 +48,7 @@ public:
 	virtual ~Distance();
 	bool findChessboardColor();
 	bool findChessboardIr();
-	void createChessBoardPlane(cv::Mat &output);
+	void createChessBoardPlane(cv::Mat &output, double &d);
 	double getNormalWithDistance(cv::Mat points, cv::Mat &normal);
 	double computeDistanceToPoint(const cv::Point &pointImage,
 			const cv::Mat &normal, const double distance);

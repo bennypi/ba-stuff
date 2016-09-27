@@ -25,7 +25,8 @@ const char* IR_TOPIC = "/kinect2/sd/image_ir_rect";
 const char* DEPTH_TOPIC = "/kinect2/sd/image_depth_rect";
 float fx, fy, cx, cy;
 cv::Mat cameraMatrix, distortion, rvec, rotation, translation,
-		extrinsicsRotation, extrinsicsTranslation, lookupYDepth, lookupXDepth, lookupYCalculated, lookupXCalculated;
+		extrinsicsRotation, extrinsicsTranslation, lookupYDepth, lookupXDepth,
+		lookupYCalculated, lookupXCalculated;
 bool running;
 
 void readCalibrationData() {
@@ -54,12 +55,13 @@ void readCalibrationData() {
 	cy = cameraMatrix.at<double>(1, 2);
 }
 
-void createCloudDepth(const cv::Mat &depth, int b, int g, int r,
+void createCloudDepth(const cv::Mat &depth, int blue, int green, int red,
 		pcl::PointCloud<pcl::PointXYZRGBA>::Ptr &cloud) {
 	const float badPoint = std::numeric_limits<float>::quiet_NaN();
 
 #pragma omp parallel for
-	std::cout << "number of points: " << depth.rows * depth.cols << std::endl;
+	std::cout << "number of depth points: " << depth.rows * depth.cols
+			<< std::endl;
 	int count = 0;
 	for (int r = 0; r < depth.rows; ++r) {
 		pcl::PointXYZRGBA *itP = &cloud->points[r * depth.cols];
@@ -80,21 +82,22 @@ void createCloudDepth(const cv::Mat &depth, int b, int g, int r,
 			itP->z = depthValue;
 			itP->x = *itX * depthValue;
 			itP->y = y * depthValue;
-			itP->b = b;
-			itP->g = g;
-			itP->r = r;
+			itP->b = blue;
+			itP->g = green;
+			itP->r = red;
 			itP->a = 255;
 		}
 	}
 	std::cout << count << std::endl;
 }
 
-void createCloudCalculated(const cv::Mat &depth, int b, int g, int r,
+void createCloudCalculated(const cv::Mat &depth, int blue, int green, int red,
 		pcl::PointCloud<pcl::PointXYZRGBA>::Ptr &cloud) {
 	const float badPoint = std::numeric_limits<float>::quiet_NaN();
 
 #pragma omp parallel for
-	std::cout << "number of points: " << depth.rows * depth.cols << std::endl;
+	std::cout << "number of calculated points: " << depth.rows * depth.cols
+			<< std::endl;
 	int count = 0;
 	for (int r = 0; r < depth.rows; ++r) {
 		pcl::PointXYZRGBA *itP = &cloud->points[r * depth.cols];
@@ -115,9 +118,9 @@ void createCloudCalculated(const cv::Mat &depth, int b, int g, int r,
 			itP->z = depthValue;
 			itP->x = *itX * depthValue;
 			itP->y = y * depthValue;
-			itP->b = b;
-			itP->g = g;
-			itP->r = r;
+			itP->b = blue;
+			itP->g = green;
+			itP->r = red;
 			itP->a = 255;
 		}
 	}
@@ -197,6 +200,30 @@ void showStatistics(const cv::Mat& mat, double& low, double& high) {
 	std::cout << "max value: " << high << std::endl;
 }
 
+void createCloudFromHessian(cv::Mat &normal, double distance,
+		pcl::PointCloud<pcl::PointXYZRGBA>::Ptr& cloud) {
+	double norm[3];
+	norm[0] = normal.at<double>(0, 0);
+	norm[1] = normal.at<double>(0, 1);
+	norm[2] = normal.at<double>(0, 2);
+
+	for (int r = 0; r < cloud->height; r++) {
+		pcl::PointXYZRGBA *itP = &cloud->points[r * cloud->width];
+		for (int c = 0; c < cloud->width; c++, ++itP) {
+			double x = r/1000.0;
+			double y = c/1000.0;
+			double z = (-norm[0] * x - norm[1] * y + distance) / norm[2];
+			itP->z = z;
+			itP->x = x;
+			itP->y = y;
+			itP->b = 0;
+			itP->g = 0;
+			itP->r = 255;
+			itP->a = 255;
+		}
+	}
+}
+
 int main(int argc, char **argv) {
 	std::cout << "hello world" << std::endl;
 	ros::init(argc, argv, "cloudViewerTest");
@@ -214,8 +241,10 @@ int main(int argc, char **argv) {
 	std::cout << found << std::endl;
 
 	cv::Mat normal;
-	d.createChessBoardPlane(normal);
+	double distance;
+	d.createChessBoardPlane(normal, distance);
 	std::cout << normal << std::endl;
+	std::cout << distance << std::endl;
 
 	cv::Mat calculatedMat(ir.rows, ir.cols, CV_64F);
 	d.createMatForNormal(calculatedMat);
@@ -223,29 +252,42 @@ int main(int argc, char **argv) {
 	double low, high;
 	showStatistics(calculatedMat, low, high);
 
-	pcl::PointCloud<pcl::PointXYZRGBA>::Ptr depthCloud, computedCloud;
+	pcl::PointCloud<pcl::PointXYZRGBA>::Ptr depthCloud, computedCloud,
+			hessianCloud;
 	initializeCloud(ir, depthCloud);
 	initializeCloud(calculatedMat, computedCloud);
 	createLookupDepth(depth.cols, depth.rows);
 	createLookupCalculated(calculatedMat.cols, calculatedMat.rows);
 
+	// create cloud from hessian
+	hessianCloud = pcl::PointCloud<pcl::PointXYZRGBA>::Ptr(
+			new pcl::PointCloud<pcl::PointXYZRGBA>());
+	hessianCloud->height = ir.rows;
+	hessianCloud->width = ir.cols;
+	hessianCloud->is_dense = false;
+	hessianCloud->points.resize(hessianCloud->height * hessianCloud->width);
+	createCloudFromHessian(normal, distance, hessianCloud);
+
 	pcl::visualization::PCLVisualizer::Ptr visualizer(
 			new pcl::visualization::PCLVisualizer("Cloud Viewer"));
 	const std::string depthCloudName = "depth";
 	const std::string calculatedCloudName = "calculated";
+	const std::string hessianCloudName = "hessian";
 
 	createCloudDepth(depth, 255, 0, 0, depthCloud);
 	createCloudCalculated(calculatedMat, 0, 255, 0, computedCloud);
 	visualizer->addPointCloud(depthCloud, depthCloudName);
 	visualizer->addPointCloud(computedCloud, calculatedCloudName);
+	visualizer->addPointCloud(hessianCloud, hessianCloudName);
 
-	initializeVisualizer(visualizer, depthCloudName, depthCloud);
+	initializeVisualizer(visualizer, calculatedCloudName, computedCloud);
 
 	running = true;
 	while (running) {
 		visualizer->spinOnce(10);
 		visualizer->updatePointCloud(depthCloud, depthCloudName);
 		visualizer->updatePointCloud(computedCloud, calculatedCloudName);
+		visualizer->updatePointCloud(hessianCloud, hessianCloudName);
 	}
 
 }

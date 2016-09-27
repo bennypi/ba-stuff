@@ -83,7 +83,7 @@ double Distance::computeDistanceToPoint(const cv::Point &pointImage,
 
 	double t = distance / normal.dot(point);
 	point *= t;
-	point *= 1000;
+//	point *= 1000;
 
 	return point.at<double>(2);
 }
@@ -122,7 +122,7 @@ bool Distance::findChessboardIr() {
 			cv::CALIB_CB_ADAPTIVE_THRESH);
 }
 
-void Distance::createChessBoardPlane(cv::Mat &normal) {
+void Distance::createChessBoardPlane(cv::Mat &normal, double &d) {
 	normal = cv::Mat(3, 1, CV_64F);
 	cv::solvePnPRansac(board, intersectionsInPicture, cameraMatrix, distortion,
 			rvec, translation, false, 300, 0.05, board.size(), cv::noArray(),
@@ -136,6 +136,7 @@ void Distance::createChessBoardPlane(cv::Mat &normal) {
 	normal = rotation * normal;
 	this->normal = normal;
 	distanceToNormal = normal.dot(Distance::translation);
+	d = distanceToNormal;
 }
 
 void Distance::updateImages(cv::Mat &color, cv::Mat &ir, cv::Mat &depth) {
