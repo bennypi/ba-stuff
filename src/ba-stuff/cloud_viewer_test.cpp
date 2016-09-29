@@ -172,6 +172,22 @@ void createCloudFromHessian(cv::Mat &normal, double distance,
 	}
 }
 
+void getDistancePlaneDepth(const cv::Mat &normal, const double distance,
+		const pcl::PointCloud<pcl::PointXYZRGBA>::Ptr& depth, cv::Mat &result) {
+	cv::Mat point(3, 1, CV_64F);
+	double* p;
+	for (int i = 0, r = 0; r < depth->height; r++, ++i) {
+		pcl::PointXYZRGBA *itDepth = &depth->points[r * depth->width];
+		p = result.ptr<double>(i);
+		for (int j = 0, c = 0; c < depth->width; c++, ++itDepth, ++j) {
+			point.at<double>(0, 0) = itDepth->x;
+			point.at<double>(0, 1) = itDepth->y;
+			point.at<double>(0, 2) = itDepth->z;
+			p[j] = point.dot(normal) / distance;
+		}
+	}
+}
+
 int main(int argc, char **argv) {
 	std::cout << "hello world" << std::endl;
 	ros::init(argc, argv, "cloudViewerTest");
@@ -183,7 +199,6 @@ int main(int argc, char **argv) {
 	readCalibrationData();
 
 	con.getColorIrDepth(color, ir, depth);
-	cv::Mat output;
 	d.updateImages(color, ir, depth);
 	bool found = d.findChessboardIr();
 	std::cout << found << std::endl;
@@ -192,9 +207,7 @@ int main(int argc, char **argv) {
 	double distance;
 	d.createChessBoardPlane(normal, distance);
 
-
-	pcl::PointCloud<pcl::PointXYZRGBA>::Ptr depthCloud, calculatedCloud,
-			hessianCloud;
+	pcl::PointCloud<pcl::PointXYZRGBA>::Ptr depthCloud, hessianCloud;
 	initializeCloud(ir, depthCloud);
 	createLookup(depth.cols, depth.rows, lookupXDepth, lookupYDepth);
 
@@ -213,6 +226,11 @@ int main(int argc, char **argv) {
 
 	createCloud(depth, 255, 0, 0, depthCloud, lookupXDepth, lookupYDepth);
 	createCloudFromHessian(normal, distance, hessianCloud, depthCloud);
+
+	cv::Mat distanceMat(depth.rows, depth.cols, CV_64F);
+	getDistancePlaneDepth(normal, distance, depthCloud, distanceMat);
+	double low, high;
+	showStatistics(distanceMat, low, high);
 
 	visualizer->addPointCloud(depthCloud, depthCloudName);
 	visualizer->addPointCloud(hessianCloud, hessianCloudName);
