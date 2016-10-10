@@ -139,20 +139,22 @@ include_directories(
 # add_dependencies(ba-stuff ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
 
 ## Declare a C++ executable
-#add_executable(distance src/${PROJECT_NAME}/distance.cpp)
+add_executable(testing src/${PROJECT_NAME}/testing.cpp)
 
 add_executable(cloudViewerTest src/${PROJECT_NAME}/cloud_viewer_test.cpp src/${PROJECT_NAME}/rosconnector.cpp src/${PROJECT_NAME}/distance.cpp) 
 
 ## Add cmake target dependencies of the executable
 ## same as for the library above
-#add_dependencies(distance ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
+add_dependencies(testing ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
 
 add_dependencies(cloudViewerTest ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
 
 ## Specify libraries to link a library or executable target against
-#target_link_libraries(distance
-#  ${catkin_LIBRARIES}
-#)
+target_link_libraries(testing
+  ${catkin_LIBRARIES}
+  ${OpenCV_LIBRARIES}
+  ${PCL_LIBRARIES}
+)
 
 target_link_libraries(cloudViewerTest
   ${catkin_LIBRARIES}
