@@ -11,6 +11,9 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <iostream>
+#include <thread>
+#include <fstream>
+
 #include <ros/ros.h>
 
 #include <opencv2/opencv.hpp>
@@ -107,6 +110,7 @@ void initializeVisualizer(
 }
 
 void showStatistics(const cv::Mat& mat, double& low, double& high) {
+	low = high = 0;
 	cv::minMaxLoc(mat, &low, &high);
 	std::cout << "min value: " << low << std::endl;
 	std::cout << "max value: " << high << std::endl;
@@ -135,7 +139,6 @@ void createCloudFromHessian(cv::Mat &normal, double distance,
 			itHessian->g = 0;
 			itHessian->r = 255;
 			itHessian->a = 255;
-//			std::cout << itOrigin->x << " " << itOrigin->y << " " << itOrigin->z << std::endl;
 		}
 	}
 }
@@ -144,7 +147,6 @@ void createCloud(const cv::Mat &mat, int blue, int green, int red,
 		pcl::PointCloud<pcl::PointXYZRGBA>::Ptr &cloud, const cv::Mat &lookupX,
 		const cv::Mat &lookupY, cv::Mat &mask) {
 	const float badPoint = std::numeric_limits<float>::quiet_NaN();
-
 #pragma omp parallel for
 	for (int r = 0; r < mat.rows; ++r) {
 		pcl::PointXYZRGBA *itP = &cloud->points[r * mat.cols];
@@ -181,9 +183,9 @@ void getDistancePlaneDepth(const cv::Mat &normal, const double distance,
 		cv::Mat &mask) {
 	cv::Mat point(3, 1, CV_64F);
 	double* p;
-	for (int i = 0, r = 0; r < depth->height; r++, ++i) {
+	for (int r = 0; r < depth->height; r++) {
 		pcl::PointXYZRGBA *itDepth = &depth->points[r * depth->width];
-		p = result.ptr<double>(i);
+		p = result.ptr<double>(r);
 		uchar *itMask = mask.ptr<uchar>(r);
 		for (int j = 0, c = 0; c < depth->width;
 				c++, ++itDepth, ++j, ++itMask) {
@@ -197,6 +199,52 @@ void getDistancePlaneDepth(const cv::Mat &normal, const double distance,
 			}
 		}
 	}
+}
+
+void prepareMatForColorMap(const cv::Mat &input, cv::Mat &output) {
+	CV_Assert(output.depth() == CV_8U);
+	CV_Assert(input.size == output.size);
+	double min = 0;
+	double max = 255;
+	uchar* pOutput;
+	for (int i = 0; i < input.rows; ++i) {
+		const int* pInput = input.ptr<int>(i);
+		pOutput = output.ptr<uchar>(i);
+		for (int j = 0; j < input.cols; ++j, ++pInput, ++pOutput) {
+			double tmpValue = *pInput;
+			tmpValue = tmpValue * 100 + 127;
+			if (tmpValue < min) {
+				tmpValue = min;
+			} else if (tmpValue > max) {
+				tmpValue = max;
+			}
+			char value = tmpValue;
+			*pOutput = value;
+		}
+	}
+}
+
+void showColorMap(const cv::Mat &input) {
+	cv::Mat colorMap;
+	cv::namedWindow("Color map", cv::WINDOW_AUTOSIZE);
+	cv::applyColorMap(input, colorMap, cv::COLORMAP_RAINBOW);
+	cv::imshow("Color Map", colorMap);
+	cv::waitKey();
+}
+
+void writeDataFile(const cv::Mat &input) {
+	std::ofstream myfile;
+	myfile.open("data.txt");
+	myfile << "# distance between calculated plane from chessboard and measured depth values\n";
+	myfile << "# values are in meters\n";
+	myfile << "# x - y - distance\n";
+	for (int row = 0; row < input.rows; ++row){
+		const double* p = input.ptr<double>(row);
+		for (int col = 0; col < input.cols; ++col, ++p){
+			myfile << row << ' ' << col << ' ' << *p << "\n";
+		}
+	}
+	myfile.close();
 }
 
 int main(int argc, char **argv) {
@@ -246,8 +294,15 @@ int main(int argc, char **argv) {
 
 	double low, high;
 	showStatistics(distanceMat, low, high);
-	cv::Scalar meanScalar = cv::mean(distanceMat);
+	cv::Scalar meanScalar = cv::mean(distanceMat, mask);
 	std::cout << meanScalar << std::endl;
+
+	cv::Mat colorMap(depth.rows, depth.cols, CV_8U);
+	prepareMatForColorMap(distanceMat, colorMap);
+	showStatistics(colorMap, low, high);
+	meanScalar = cv::mean(colorMap, mask);
+	std::cout << meanScalar << std::endl;
+	std::thread t(showColorMap, colorMap);
 
 	visualizer->addPointCloud(depthCloud, depthCloudName);
 	visualizer->addPointCloud(hessianCloud, hessianCloudName);
@@ -259,7 +314,7 @@ int main(int argc, char **argv) {
 		visualizer->spinOnce(10);
 		visualizer->updatePointCloud(depthCloud, depthCloudName);
 		visualizer->updatePointCloud(hessianCloud, hessianCloudName);
-		sleep(1);
 	}
-
+	t.join();
+	writeDataFile(distanceMat);
 }
