@@ -109,8 +109,9 @@ void initializeVisualizer(
 	visualizer->registerKeyboardCallback(keyboardEvent);
 }
 
-void showStatistics(const cv::Mat& mat, double& low, double& high) {
-	low = high = 0;
+void printMinAndMax(const cv::Mat& mat) {
+	double low = 0;
+	double high = 0;
 	cv::minMaxLoc(mat, &low, &high);
 	std::cout << "min value: " << low << std::endl;
 	std::cout << "max value: " << high << std::endl;
@@ -193,7 +194,14 @@ void getDistancePlaneDepth(const cv::Mat &normal, const double distance,
 				point.at<double>(0, 0) = itDepth->x;
 				point.at<double>(0, 1) = itDepth->y;
 				point.at<double>(0, 2) = itDepth->z;
-				p[j] = point.dot(normal) / distance;
+				double d = point.dot(normal) - distance;
+				// if value is too far outside
+				if (d < -0.2 || d > 0.2) {
+					p[j] = 0;
+					*itMask = 0;
+				} else {
+					p[j] = d;
+				}
 			} else {
 				p[j] = 0;
 			}
@@ -204,20 +212,18 @@ void getDistancePlaneDepth(const cv::Mat &normal, const double distance,
 void prepareMatForColorMap(const cv::Mat &input, cv::Mat &output) {
 	CV_Assert(output.depth() == CV_8U);
 	CV_Assert(input.size == output.size);
-	double min = 0;
-	double max = 255;
+	double outMin = 0;
+	double outMax = 255;
+	double inMin, inMax;
+	cv::minMaxLoc(input, &inMin, &inMax);
+	std::cout << inMin << " " << inMax << std::endl;
 	uchar* pOutput;
 	for (int i = 0; i < input.rows; ++i) {
 		const int* pInput = input.ptr<int>(i);
 		pOutput = output.ptr<uchar>(i);
 		for (int j = 0; j < input.cols; ++j, ++pInput, ++pOutput) {
 			double tmpValue = *pInput;
-			tmpValue = tmpValue * 100 + 127;
-			if (tmpValue < min) {
-				tmpValue = min;
-			} else if (tmpValue > max) {
-				tmpValue = max;
-			}
+			tmpValue = (tmpValue - inMin) *((outMax-outMin)/(inMax - inMin)) + outMin;
 			char value = tmpValue;
 			*pOutput = value;
 		}
@@ -232,41 +238,43 @@ void showColorMap(const cv::Mat &input) {
 	cv::waitKey();
 }
 
-void writeDataFile(const cv::Mat &input) {
+void writeDataFile(const cv::Mat &input, const cv::Mat &mask) {
 	std::ofstream myfile;
 	myfile.open("data.txt");
-	myfile << "# distance between calculated plane from chessboard and measured depth values\n";
+	myfile
+			<< "# distance between calculated plane from chessboard and measured depth values\n";
 	myfile << "# values are in meters\n";
 	myfile << "# x - y - distance\n";
-	for (int row = 0; row < input.rows; ++row){
+	for (int row = 0; row < input.rows; ++row) {
 		const double* p = input.ptr<double>(row);
-		for (int col = 0; col < input.cols; ++col, ++p){
-			myfile << row << ' ' << col << ' ' << *p << "\n";
+		const uchar* pMask = mask.ptr<uchar>(row);
+		for (int col = 0; col < input.cols; ++col, ++p, ++pMask) {
+			if (*pMask) {
+				myfile << row << ' ' << col << ' ' << *p << "\n";
+			}
 		}
 	}
 	myfile.close();
 }
 
 int main(int argc, char **argv) {
-	std::cout << "hello world" << std::endl;
 	ros::init(argc, argv, "cloudViewerTest");
 	ros::NodeHandle nh;
 	RosConnector con(nh, COLOR_TOPIC, IR_TOPIC, DEPTH_TOPIC);
 	cv::Mat color, ir, depth;
 	Distance d(true, cv::Size(7, 5), argc, argv);
-	std::cout << "before readCalibration" << std::endl;
 
 	readCalibrationData();
 
 	con.getColorIrDepth(color, ir, depth);
 	d.updateImages(color, ir, depth);
-	std::cout << "before findChessboard" << std::endl;
 	bool found = d.findChessboardIr();
-	std::cout << found << std::endl;
+	std::cout << "chessboard found: " << found << std::endl;
 
 	cv::Mat normal;
 	double distance;
 	d.createChessBoardPlane(normal, distance);
+	std::cout << "distance to chessboardplane: " << distance << std::endl;
 
 	pcl::PointCloud<pcl::PointXYZRGBA>::Ptr depthCloud, hessianCloud;
 	initializeCloud(ir, depthCloud);
@@ -293,13 +301,13 @@ int main(int argc, char **argv) {
 	getDistancePlaneDepth(normal, distance, depthCloud, distanceMat, mask);
 
 	double low, high;
-	showStatistics(distanceMat, low, high);
+	printMinAndMax(distanceMat);
 	cv::Scalar meanScalar = cv::mean(distanceMat, mask);
 	std::cout << meanScalar << std::endl;
 
 	cv::Mat colorMap(depth.rows, depth.cols, CV_8U);
 	prepareMatForColorMap(distanceMat, colorMap);
-	showStatistics(colorMap, low, high);
+	printMinAndMax(colorMap);
 	meanScalar = cv::mean(colorMap, mask);
 	std::cout << meanScalar << std::endl;
 	std::thread t(showColorMap, colorMap);
@@ -316,5 +324,5 @@ int main(int argc, char **argv) {
 		visualizer->updatePointCloud(hessianCloud, hessianCloudName);
 	}
 	t.join();
-	writeDataFile(distanceMat);
+	writeDataFile(distanceMat, mask);
 }
