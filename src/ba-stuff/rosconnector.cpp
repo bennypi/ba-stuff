@@ -48,15 +48,12 @@ void RosConnector::syncedImageCallback(const sensor_msgs::ImageConstPtr color,
 	readImage(ir, irMat);
 	readImage(depth, depthMat);
 
-	// IR image input
-	if (irMat.type() == CV_16U) {
-		cv::Mat tmp;
-		irMat.convertTo(tmp, CV_8U, 0.02);
-		cv::cvtColor(tmp, irMat, CV_GRAY2BGR);
-	}
+	cv::Mat tmp(irMat.cols, irMat.rows, CV_8U);
+	irMat.convertTo(tmp, CV_8U, 0.00390625);
+
 	lock.lock();
 	this->colorMat = colorMat;
-	this->irMat = irMat;
+	this->irMat = tmp;
 	this->depthMat = depthMat;
 	lock.unlock();
 }

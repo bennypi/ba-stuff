@@ -23,9 +23,9 @@
 #include <pcl/io/pcd_io.h>
 #include <pcl/visualization/cloud_viewer.h>
 
-const char* COLOR_TOPIC = "/kinect2/sd/image_color_rect";
-const char* IR_TOPIC = "/kinect2/sd/image_ir_rect";
-const char* DEPTH_TOPIC = "/kinect2/sd/image_depth_rect";
+const char* COLOR_TOPIC = "/kinect2/hd/image_mono";
+const char* IR_TOPIC = "/kinect2/sd/image_ir";
+const char* DEPTH_TOPIC = "/kinect2/sd/image_depth";
 float fx, fy, cx, cy;
 cv::Mat cameraMatrix, distortion, rvec, rotation, translation,
 		extrinsicsRotation, extrinsicsTranslation, lookupYDepth, lookupXDepth,
@@ -262,20 +262,34 @@ int main(int argc, char **argv) {
 	ros::NodeHandle nh;
 	RosConnector con(nh, COLOR_TOPIC, IR_TOPIC, DEPTH_TOPIC);
 	cv::Mat color, ir, depth;
-	Distance d(true, cv::Size(7, 5), argc, argv);
+	Distance distanceInstance(cv::Size(7, 5), argc, argv);
 
 	readCalibrationData();
 
-	con.getColorIrDepth(color, ir, depth);
-	d.updateImages(color, ir, depth);
-	bool found = d.findChessboardIr();
-	std::cout << "chessboard found: " << found << std::endl;
+	std::cout << "searching for chessboards" << std::endl;
+	bool found = false;
+	while (!found) {
+		con.getColorIrDepth(color, ir, depth);
+		distanceInstance.updateImages(color, ir, depth);
+		bool foundIr = distanceInstance.findChessboardIr();
+		bool foundColor = distanceInstance.findChessboardColor();
+		std::cout << foundIr << " - " << foundColor << std::endl;
+		found = foundIr && foundColor;
+	}
 
-	cv::Mat normal;
-	double distance;
-	d.createChessBoardPlane(normal, distance);
-	std::cout << "distance to chessboardplane: " << distance << std::endl;
+	distanceInstance.createColorPlane();
+	distanceInstance.createIrPlane();
 
+	cv::Mat normalIr, normalColor;
+	double dIr, dColor;
+	normalIr = distanceInstance.irCam.normal;
+	dIr = distanceInstance.irCam.d;
+	normalColor = distanceInstance.colorCam.normal;
+	dColor = distanceInstance.colorCam.d;
+
+	std::cout << "distance to chessboardplane in ir: " << dIr << std::endl;
+	std::cout << "distance to chessboardplane in ir: " << dColor << std::endl;
+/*
 	pcl::PointCloud<pcl::PointXYZRGBA>::Ptr depthCloud, hessianCloud;
 	initializeCloud(ir, depthCloud);
 	createLookup(depth.cols, depth.rows, lookupXDepth, lookupYDepth);
@@ -325,4 +339,5 @@ int main(int argc, char **argv) {
 	}
 	t.join();
 	writeDataFile(distanceMat, mask);
+	*/
 }

@@ -24,11 +24,14 @@
 #include <pcl/point_cloud.h>
 
 class Distance {
+	struct cameraProperties {
+		cv::Mat cameraMatrix, distortion, normal;
+		double fx, fy, cx, cy, d;
+	};
+
 private:
 	const float boardSize = 0.03;
 	std::vector<cv::Point3f> board;
-	cv::Mat cameraMatrix, distortion, rvec, rotation, translation;
-	double fx, fy, cx, cy;
 	const static char* KINECT_IMAGE;
 	const static char* IR_IMAGE;
 	const static char* COLOR_MAP;
@@ -38,23 +41,21 @@ private:
 	void createBoardPoints();
 
 public:
-	bool chessBoardFound, update, modeIr;
+	cameraProperties colorCam, irCam;
+	bool chessBoardFound, update;
 	cv::Mat color, ir, depth;
-	cv::Mat normal, adjMap, colorMap, intersectionsInPicture, extrinsicsRotation,
-			extrinsicsTranslation;
+	cv::Mat pointsIr, pointsColor;
+	cv::Mat normal, adjMap, colorMap,
+			extrinsicsRotation, extrinsicsTranslation;
 	const cv::Size boardDims;
 
-	Distance(bool modeIr, const cv::Size &size, int argc, char **argv);
+	Distance(const cv::Size &size, int argc, char **argv);
 	virtual ~Distance();
 	bool findChessboardColor();
 	bool findChessboardIr();
-	void createChessBoardPlane(cv::Mat &output, double &d);
-	double getNormalWithDistance(cv::Mat points, cv::Mat &normal);
-	double computeDistanceToPoint(const cv::Point &pointImage,
-			const cv::Mat &normal, const double distance);
-	void drawDetailsInImage(double normalDistance);
+	void createIrPlane();
+	void createColorPlane();
 	void updateImages(cv::Mat &color, cv::Mat &ir, cv::Mat &depth);
-	void createMatForNormal(cv::Mat &output);
 };
 
 #endif /* BA_STUFF_SRC_DISTANCE_H_ */

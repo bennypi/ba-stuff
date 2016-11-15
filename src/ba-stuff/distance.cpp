@@ -14,18 +14,33 @@ const char* IR_IMAGE = "IR_IMAGE";
 void Distance::readCalibrationData() {
 	cv::FileStorage fs;
 	std::string path;
-	if (modeIr) {
-		path = ("/home/benny/kinect_cal_data/calib_ir.yaml");
-	} else {
-		path = ("/home/benny/kinect_cal_data/calib_color.yaml");
-	}
+
+	path = ("/home/benny/kinect_cal_data/calib_ir.yaml");
 	if (fs.open(path, cv::FileStorage::READ)) {
-		fs["cameraMatrix"] >> cameraMatrix;
-		fs["distortionCoefficients"] >> distortion;
+		fs["cameraMatrix"] >> irCam.cameraMatrix;
+		fs["distortionCoefficients"] >> irCam.distortion;
 		fs.release();
+		irCam.fx = irCam.cameraMatrix.at<double>(0, 0);
+		irCam.fy = irCam.cameraMatrix.at<double>(1, 1);
+		irCam.cx = irCam.cameraMatrix.at<double>(0, 2);
+		irCam.cy = irCam.cameraMatrix.at<double>(1, 2);
 	} else {
 		std::cerr << "couldn't read calibration '" << path << "'!" << std::endl;
 	}
+
+	path = ("/home/benny/kinect_cal_data/calib_color.yaml");
+	if (fs.open(path, cv::FileStorage::READ)) {
+		fs["cameraMatrix"] >> colorCam.cameraMatrix;
+		fs["distortionCoefficients"] >> colorCam.distortion;
+		fs.release();
+		colorCam.fx = colorCam.cameraMatrix.at<double>(0, 0);
+		colorCam.fy = colorCam.cameraMatrix.at<double>(1, 1);
+		colorCam.cx = colorCam.cameraMatrix.at<double>(0, 2);
+		colorCam.cy = colorCam.cameraMatrix.at<double>(1, 2);
+	} else {
+		std::cerr << "couldn't read calibration '" << path << "'!" << std::endl;
+	}
+
 	path = ("/home/benny/kinect_cal_data/calib_pose.yaml");
 	if (fs.open(path, cv::FileStorage::READ)) {
 		fs["rotation"] >> extrinsicsRotation;
@@ -36,15 +51,10 @@ void Distance::readCalibrationData() {
 	}
 //	do i need this?
 //	cv::initUndistortRectifyMap(cameraMatrix, distortion, cv::Mat(), cameraMatrix, size, CV_32FC1, mapX, mapY);
-//	std::cout << cameraMatrix << std::endl;
-	fx = cameraMatrix.at<double>(0, 0);
-	fy = cameraMatrix.at<double>(1, 1);
-	cx = cameraMatrix.at<double>(0, 2);
-	cy = cameraMatrix.at<double>(1, 2);
 }
 
-Distance::Distance(bool modeIr, const cv::Size &size, int argc, char **argv) :
-		boardDims(size), modeIr(modeIr) {
+Distance::Distance(const cv::Size &size, int argc, char **argv) :
+		boardDims(size) {
 	ros::init(argc, argv, "distance");
 	ros::NodeHandle nh;
 	chessBoardFound = false;
@@ -57,37 +67,6 @@ Distance::~Distance() {
 	// TODO Auto-generated destructor stub
 }
 
-double Distance::getNormalWithDistance(cv::Mat points, cv::Mat &normal) {
-	cv::solvePnPRansac(board, points, cameraMatrix, distortion, rvec,
-			translation, false, 300, 0.05, board.size(), cv::noArray(),
-			cv::ITERATIVE);
-
-	cv::Rodrigues(rvec, rotation);
-
-	normal.at<double>(0) = 0;
-	normal.at<double>(1) = 0;
-	normal.at<double>(2) = 1;
-	normal = rotation * normal;
-	double distance = normal.dot(translation);
-
-	return distance;
-}
-
-double Distance::computeDistanceToPoint(const cv::Point &pointImage,
-		const cv::Mat &normal, const double distance) {
-	cv::Mat point = cv::Mat(3, 1, CV_64F);
-
-	point.at<double>(0) = (pointImage.x - cx) / fx;
-	point.at<double>(1) = (pointImage.y - cy) / fy;
-	point.at<double>(2) = 1;
-
-	double t = distance / normal.dot(point);
-	point *= t;
-	point *= 1000;
-
-	return point.at<double>(2);
-}
-
 void Distance::createBoardPoints() {
 	board.resize(boardDims.width * boardDims.height);
 	for (size_t r = 0, i = 0; r < (size_t) (boardDims.height); ++r) {
@@ -97,20 +76,21 @@ void Distance::createBoardPoints() {
 	}
 }
 
-void Distance::drawDetailsInImage(double normalDistance) {
-	cv::Mat coloredMat;
-	cv::cvtColor(color, coloredMat, CV_GRAY2BGR);
-	cv::drawChessboardCorners(coloredMat, boardDims, intersectionsInPicture,
-			chessBoardFound);
-	std::string distanceString = patch::to_string(normalDistance).append(" m");
-	cv::putText(coloredMat, distanceString, cv::Point(50, 100),
-			cv::FONT_HERSHEY_SIMPLEX, 1, cv::Scalar(0, 255, 0), 4);
-//	cv::imshow(KINECT_IMAGE, coloredMat);
-}
-
 bool Distance::findChessboardColor() {
-	return cv::findChessboardCorners(color, boardDims, intersectionsInPicture,
-			cv::CALIB_CB_ADAPTIVE_THRESH);
+	bool found = cv::findChessboardCorners(color, boardDims, pointsColor,
+			cv::CALIB_CB_FAST_CHECK);
+	std::cout << color.type() << std::endl;
+	cv::namedWindow("blub", cv::WINDOW_AUTOSIZE);
+	cv::imshow("blub", color);
+	cv::waitKey(0);
+	if (found) {
+		const cv::TermCriteria termCriteria(
+				cv::TermCriteria::COUNT + cv::TermCriteria::COUNT, 100,
+				DBL_EPSILON);
+		cv::cornerSubPix(color, pointsColor, cv::Size(11, 11), cv::Size(-1, -1),
+				termCriteria);
+	}
+	return found;
 }
 
 bool Distance::findChessboardIr() {
@@ -118,13 +98,22 @@ bool Distance::findChessboardIr() {
 		std::cout << "converted ir mat from 16bit to 8 bit" << std::endl;
 		ir.convertTo(ir, CV_8U, 0.00390625);
 	}
-	return cv::findChessboardCorners(ir, boardDims, intersectionsInPicture,
+	bool found = cv::findChessboardCorners(ir, boardDims, pointsIr,
 			cv::CALIB_CB_ADAPTIVE_THRESH);
+	if (found) {
+		const cv::TermCriteria termCriteria(
+				cv::TermCriteria::COUNT + cv::TermCriteria::COUNT, 100,
+				DBL_EPSILON);
+		cv::cornerSubPix(ir, pointsIr, cv::Size(11, 11), cv::Size(-1, -1),
+				termCriteria);
+	}
+	return found;
 }
 
-void Distance::createChessBoardPlane(cv::Mat &normal, double &d) {
+void Distance::createIrPlane() {
 	normal = cv::Mat(3, 1, CV_64F);
-	cv::solvePnPRansac(board, intersectionsInPicture, cameraMatrix, distortion,
+	cv::Mat rvec, translation, rotation;
+	cv::solvePnPRansac(board, pointsIr, irCam.cameraMatrix, irCam.distortion,
 			rvec, translation, false, 300, 0.05, board.size(), cv::noArray(),
 			cv::ITERATIVE);
 
@@ -134,35 +123,31 @@ void Distance::createChessBoardPlane(cv::Mat &normal, double &d) {
 	normal.at<double>(1) = 0;
 	normal.at<double>(2) = 1;
 	normal = rotation * normal;
-	this->normal = normal;
-	distanceToNormal = normal.dot(translation);
-	d = distanceToNormal;
+	irCam.normal = normal;
+	irCam.d = normal.dot(translation);
+}
+
+void Distance::createColorPlane() {
+	normal = cv::Mat(3, 1, CV_64F);
+	cv::Mat rvec, translation, rotation;
+	cv::solvePnPRansac(board, pointsColor, colorCam.cameraMatrix,
+			colorCam.distortion, rvec, translation, false, 300, 0.05,
+			board.size(), cv::noArray(), cv::ITERATIVE);
+
+	cv::Rodrigues(rvec, rotation);
+
+	normal.at<double>(0) = 0;
+	normal.at<double>(1) = 0;
+	normal.at<double>(2) = 1;
+	normal = rotation * normal;
+	colorCam.normal = normal;
+	colorCam.d = normal.dot(translation);
 }
 
 void Distance::updateImages(cv::Mat &color, cv::Mat &ir, cv::Mat &depth) {
 	this->color = color;
 	this->ir = ir;
 	this->depth = depth;
-}
-
-void calculateDistanceToPlane(cv::Mat mat, double normalDistance, Distance& d) {
-	for (int i = 0, idx = 0; i < mat.rows; i++) {
-		for (int j = 0; j < mat.cols; j++, idx++) {
-			double distanceOfPoint = d.computeDistanceToPoint(cv::Point2i(i, j),
-					d.normal, normalDistance);
-			mat.at<double>(i, j) = distanceOfPoint;
-		}
-	}
-}
-
-void Distance::createMatForNormal(cv::Mat &output) {
-	for (int i = 0; i < output.rows; i++) {
-		for (int j = 0; j < output.cols; j++) {
-			double distanceOfPoint = computeDistanceToPoint(cv::Point2i(i, j),
-					normal, distanceToNormal);
-			output.at<double>(i, j) = distanceOfPoint;
-		}
-	}
 }
 
 /*
