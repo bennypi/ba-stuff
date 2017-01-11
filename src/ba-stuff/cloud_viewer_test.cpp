@@ -288,7 +288,7 @@ int main(int argc, char **argv) {
 	dColor = distanceInstance.colorCam.d;
 
 	std::cout << "distance to chessboardplane in ir: " << dIr << std::endl;
-	std::cout << "distance to chessboardplane in ir: " << dColor << std::endl;
+	std::cout << "distance to chessboardplane in color: " << dColor << std::endl;
 /*
 	pcl::PointCloud<pcl::PointXYZRGBA>::Ptr depthCloud, hessianCloud;
 	initializeCloud(ir, depthCloud);

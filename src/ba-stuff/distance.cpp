@@ -79,10 +79,6 @@ void Distance::createBoardPoints() {
 bool Distance::findChessboardColor() {
 	bool found = cv::findChessboardCorners(color, boardDims, pointsColor,
 			cv::CALIB_CB_FAST_CHECK);
-	std::cout << color.type() << std::endl;
-	cv::namedWindow("blub", cv::WINDOW_AUTOSIZE);
-	cv::imshow("blub", color);
-	cv::waitKey(0);
 	if (found) {
 		const cv::TermCriteria termCriteria(
 				cv::TermCriteria::COUNT + cv::TermCriteria::COUNT, 100,
